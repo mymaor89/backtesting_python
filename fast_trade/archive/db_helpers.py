@@ -165,14 +165,8 @@ def get_kline(
     """
     parquet_path = f"{ARCHIVE_PATH}/{exchange}/{symbol}.parquet"
     sqlite_path = f"{ARCHIVE_PATH}/{exchange}/{symbol}.sqlite"
-    # if the db exists, if not try and downlaod it
-    if not os.path.exists(parquet_path) and not os.path.exists(sqlite_path):
-        import fast_trade.archive.update_kline as update_kline
 
-        update_kline.update_kline(
-            symbol=symbol, exchange=exchange, start_date=start_date, end_date=end_date
-        )
-
+    # Convert string dates before any call that expects datetime objects
     if start_date is not None:
         if isinstance(start_date, str):
             start_date = datetime.datetime.fromisoformat(start_date)
@@ -180,6 +174,14 @@ def get_kline(
     if end_date is not None:
         if isinstance(end_date, str):
             end_date = datetime.datetime.fromisoformat(end_date)
+
+    # if the db exists, if not try and downlaod it
+    if not os.path.exists(parquet_path) and not os.path.exists(sqlite_path):
+        import fast_trade.archive.update_kline as update_kline
+
+        update_kline.update_kline(
+            symbol=symbol, exchange=exchange, start_date=start_date, end_date=end_date
+        )
 
     df = None
     if os.path.exists(parquet_path):

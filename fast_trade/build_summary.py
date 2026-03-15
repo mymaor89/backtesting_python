@@ -47,7 +47,13 @@ __all__ = [
 def build_summary(df, performance_start_time):
     equity_peak = round(df["account_value"].max(), 3)
     equity_final = round(df.iloc[-1]["adj_account_value"], 3)
-    max_drawdown = round(df["adj_account_value"].min(), 3)
+    _rolling_max = df["adj_account_value"].expanding().max()
+    if _rolling_max.max() <= 0:
+        max_drawdown = 0.0
+    else:
+        _drawdowns = df["adj_account_value"] / _rolling_max - 1.0
+        _min_dd = _drawdowns.min()
+        max_drawdown = float(round(_min_dd * 100, 3)) if not pd.isna(_min_dd) else 0.0
 
     performance_stop_time = datetime.datetime.utcnow()
     start_date = df.index[0]
@@ -84,6 +90,10 @@ def build_summary(df, performance_start_time):
     (total_num_losing_trades, avg_loss_perc, loss_perc) = summarize_trades(
         loss_trades, total_trades
     )
+
+    gross_profit = win_trades.adj_account_value_change_perc.sum() if not win_trades.empty else 0.0
+    gross_loss = abs(loss_trades.adj_account_value_change_perc.sum()) if not loss_trades.empty else 0.0
+    profit_factor = float(round(gross_profit / gross_loss, 3)) if gross_loss > 0 else 0.0
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
@@ -155,6 +165,10 @@ def build_summary(df, performance_start_time):
         "num_of_enter_signals": total_enter,
         "num_of_exit_signals": total_exit,
         "num_of_hold_signals": total_hold,
+        "win_rate": float(win_perc if not pd.isna(win_perc) else 0),
+        "profit_factor": float(profit_factor if not pd.isna(profit_factor) else 0),
+        "avg_trade_perc": float(mean_trade_perc if not pd.isna(mean_trade_perc) else 0),
+        "time_in_market": float(market_exposure.get("time_in_market_pct", 0)),
         "market_adjusted_return": market_adjusted_return,
         "position_metrics": position_metrics,
         "trade_quality": trade_quality,

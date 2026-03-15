@@ -231,7 +231,7 @@ def test_build_summary():
     assert res["return_perc"] == 10.0
     assert res["sharpe_ratio"] == 0.469
     assert res["equity_peak"] == 110
-    assert res["max_drawdown"] == 90
+    assert res["max_drawdown"] == -18.182
     assert res["buy_and_hold_perc"] == 9.091
     assert abs(res["median_trade_len"] - 179.5) <= 10
     assert abs(res["mean_trade_len"] - 179.5) <= 10
@@ -249,7 +249,7 @@ def test_build_summary():
     assert res["win_perc"] == 66.667
     assert res["loss_perc"] == 0.0
     assert res["equity_final"] == 100
-    assert res["max_drawdown"] == 90
+    assert res["max_drawdown"] == -18.182
     assert res["total_fees"] == 0.0
     assert res["first_tic"] == "2018-04-17 04:03:04"
     assert res["last_tic"] == "2018-04-17 04:11:03"

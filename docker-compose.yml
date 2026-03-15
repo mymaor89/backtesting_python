@@ -65,6 +65,49 @@ services:
       - ft-net
 
   # ──────────────────────────────────────────────
+  # STRATEGY ENGINE API  (FastAPI)
+  # The Go backend and React frontend talk to this.
+  # POST /backtest   — synchronous backtest run
+  # POST /optimize   — async GA optimisation
+  # GET  /health     — liveness probe
+  # ──────────────────────────────────────────────
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ft-api
+    restart: unless-stopped
+    # Default CMD in Dockerfile already runs uvicorn; listed here for clarity
+    command: ["uvicorn", "fast_trade.services.api:app",
+              "--host", "0.0.0.0", "--port", "8000",
+              "--workers", "2", "--log-level", "info"]
+    environment:
+      - DATABASE_URL=postgresql://fasttrade:${DB_PASSWORD:-fasttrade_dev}@timescaledb:5432/fasttrade
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - ARCHIVE_PATH=/data/lake/bronze
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - lake_data:/data/lake
+      - results_data:/data/results
+      - ./fast_trade:/app/fast_trade   # live-reload during dev
+    ports:
+      - "8000:8000"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--silent", "--fail", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ft-net
+
+  # ──────────────────────────────────────────────
   # DATA INGESTION LAYER
   # Fetches from yfinance / Binance / Coinbase
   # Normalizes and writes to TimescaleDB + bronze lake
@@ -76,10 +119,14 @@ services:
     container_name: ft-ingestor
     restart: unless-stopped
     command: ["python", "-m", "fast_trade.services.ingestor"]
+    # Pass symbols as: "EXCHANGE:SYMBOL:YF_TICKER:INTERVAL,..."
+    # Example: INGEST_SYMBOLS=yfinance:BTCUSD:BTC-USD:1h,yfinance:SPY:SPY:1d
     environment:
       - ARCHIVE_PATH=/data/lake/bronze
       - DATABASE_URL=postgresql://fasttrade:${DB_PASSWORD:-fasttrade_dev}@timescaledb:5432/fasttrade
       - REDIS_URL=redis://redis:6379/0
+      - INGESTOR_POLL_INTERVAL=300
+      # - INGEST_SYMBOLS=yfinance:BTCUSD:BTC-USD:1h,yfinance:SPY:SPY:1d
       - PYTHONUNBUFFERED=1
     volumes:
       - lake_data:/data/lake
@@ -251,6 +298,55 @@ services:
     depends_on:
       timescaledb:
         condition: service_healthy
+    networks:
+      - ft-net
+
+  # ──────────────────────────────────────────────
+  # GO PROXY
+  # Security layer between React frontend and Python API.
+  # Strips /api prefix and forwards to ft-api:8000.
+  # React dev server proxies /api/* → here.
+  # ──────────────────────────────────────────────
+  go-proxy:
+    build:
+      context: ./go-proxy
+      dockerfile: Dockerfile
+    container_name: ft-go-proxy
+    restart: unless-stopped
+    environment:
+      - PYTHON_API_URL=http://ft-api:8000
+    ports:
+      - "9000:9000"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - ft-net
+
+  # ──────────────────────────────────────────────
+  # STRATEGY LAB  (React + Vite dev server)
+  # Vite proxies /api/* → go-proxy:9000 (never hits Python directly).
+  # For production: npm run build → copy dist/ into Go binary via embed.
+  # ──────────────────────────────────────────────
+  strategy-lab:
+    build:
+      context: ./strategy-lab
+      dockerfile: Dockerfile
+    container_name: ft-strategy-lab
+    restart: unless-stopped
+    environment:
+      - VITE_API_PROXY_TARGET=http://go-proxy:9000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - go-proxy
+    volumes:
+      - ./strategy-lab/src:/app/src   # hot-reload without full image rebuild
     networks:
       - ft-net
 

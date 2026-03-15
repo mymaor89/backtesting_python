@@ -51,7 +51,7 @@ ft = "fast_trade.cli:main"
 ftv = "fast_trade.ftv:main"
 
 [tool.setuptools]
-packages = ["fast_trade", "fast_trade.archive", "fast_trade.summary", "fast_trade.ml"]
+packages = ["fast_trade", "fast_trade.archive", "fast_trade.summary", "fast_trade.ml", "fast_trade.services"]
 include-package-data = true
 
 [tool.setuptools.package-data]
