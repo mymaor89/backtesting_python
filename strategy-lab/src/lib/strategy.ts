@@ -14,6 +14,9 @@ export interface Rule {
   right: string  // indicator name OR numeric string
 }
 
+export interface OrGroup { or: Rule[] }
+export type RuleItem = Rule | OrGroup
+
 export interface StrategyFormState {
   exchange: string
   symbol: string
@@ -23,8 +26,8 @@ export interface StrategyFormState {
   base_balance: number
   comission: number
   datapoints: Datapoint[]
-  enter: Rule[]
-  exit: Rule[]
+  enter: RuleItem[]
+  exit: RuleItem[]
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -91,6 +94,12 @@ export function defaultArgs(transformer: string): number[] {
 // ── Converters ────────────────────────────────────────────────────────────────
 
 export function formToStrategy(f: StrategyFormState): Record<string, unknown> {
+  const convertItem = (r: RuleItem): unknown => {
+    if ('or' in r) {
+      return { or: r.or.map(sub => [sub.left, sub.op, isNaN(Number(sub.right)) ? sub.right : Number(sub.right)]) }
+    }
+    return [r.left, r.op, isNaN(Number(r.right)) ? r.right : Number(r.right)]
+  }
   return {
     symbol:        f.symbol,
     exchange:      f.exchange,
@@ -100,8 +109,8 @@ export function formToStrategy(f: StrategyFormState): Record<string, unknown> {
     base_balance:  f.base_balance,
     comission:     f.comission,
     datapoints:    f.datapoints.map(dp => ({ name: dp.name, transformer: dp.transformer, args: dp.args })),
-    enter:         f.enter.map(r => [r.left, r.op, isNaN(Number(r.right)) ? r.right : Number(r.right)]),
-    exit:          f.exit.map(r  => [r.left, r.op, isNaN(Number(r.right)) ? r.right : Number(r.right)]),
+    enter:         f.enter.map(convertItem),
+    exit:          f.exit.map(convertItem),
   }
 }
 
@@ -111,6 +120,13 @@ export function strategyToForm(s: Record<string, unknown>): StrategyFormState {
     op:    (r[1] ?? '<') as Operator,
     right: String(r[2] ?? '0'),
   })
+  const parseItem = (r: unknown): RuleItem => {
+    if (r && typeof r === 'object' && !Array.isArray(r) && 'or' in (r as object)) {
+      const orArr = ((r as Record<string, unknown>).or as unknown[]) ?? []
+      return { or: orArr.map(sub => parseRule(sub as unknown[])) }
+    }
+    return parseRule(r as unknown[])
+  }
   return {
     exchange:     String(s.exchange ?? 'coinbase'),
     symbol:       String(s.symbol ?? 'BTC-USD'),
@@ -127,8 +143,8 @@ export function strategyToForm(s: Record<string, unknown>): StrategyFormState {
         args:        ((d.args as unknown[]) ?? [14]).map(Number),
       }
     }),
-    enter: ((s.enter as unknown[][]) ?? []).map(parseRule),
-    exit:  ((s.exit  as unknown[][]) ?? []).map(parseRule),
+    enter: ((s.enter as unknown[]) ?? []).map(parseItem),
+    exit:  ((s.exit  as unknown[]) ?? []).map(parseItem),
   }
 }
 
@@ -164,8 +180,8 @@ export function validate(f: StrategyFormState): ValidationResult {
   // Dates
   if (!f.start) addField('start', 'Start date required')
   if (!f.stop)  addField('stop', 'Stop date required')
-  if (f.start && f.stop && f.start >= f.stop)
-    addField('stop', 'Stop must be after start')
+  if (f.start && f.stop && f.start > f.stop)
+    addField('stop', 'Stop must be on or after start')
 
   // Balance / commission
   if (f.base_balance <= 0) addField('base_balance', 'Balance must be > 0')
@@ -186,21 +202,39 @@ export function validate(f: StrategyFormState): ValidationResult {
 
   const validOperands = new Set([...OHLC_COLUMNS, ...names])
 
-  const checkRules = (rules: Rule[], label: string, prefix: string) => {
+  const checkRules = (rules: RuleItem[], label: string, prefix: string) => {
     if (rules.length === 0) {
       errors.push(`At least one ${label.toLowerCase()} rule is required`)
       return
     }
-    rules.forEach((r, i) => {
-      if (!r.left) {
-        addField(`${prefix}_left_${i}`, 'Required')
-      } else if (!validOperands.has(r.left)) {
-        addField(`${prefix}_left_${i}`, `"${r.left}" is not a defined indicator or OHLC column`)
-      }
-      if (r.right === '') {
-        addField(`${prefix}_right_${i}`, 'Required')
-      } else if (isNaN(Number(r.right)) && !validOperands.has(r.right)) {
-        addField(`${prefix}_right_${i}`, `"${r.right}" must be a number or a known indicator`)
+    rules.forEach((item, i) => {
+      if ('or' in item) {
+        if (item.or.length === 0) {
+          errors.push(`OR group in ${label} must have at least one condition`)
+        }
+        item.or.forEach((sub, j) => {
+          if (!sub.left) {
+            addField(`${prefix}_or${i}_left_${j}`, 'Required')
+          } else if (!validOperands.has(sub.left)) {
+            addField(`${prefix}_or${i}_left_${j}`, `"${sub.left}" is not a known indicator or OHLC column`)
+          }
+          if (sub.right === '') {
+            addField(`${prefix}_or${i}_right_${j}`, 'Required')
+          } else if (isNaN(Number(sub.right)) && !validOperands.has(sub.right)) {
+            addField(`${prefix}_or${i}_right_${j}`, `"${sub.right}" must be a number or known indicator`)
+          }
+        })
+      } else {
+        if (!item.left) {
+          addField(`${prefix}_left_${i}`, 'Required')
+        } else if (!validOperands.has(item.left)) {
+          addField(`${prefix}_left_${i}`, `"${item.left}" is not a defined indicator or OHLC column`)
+        }
+        if (item.right === '') {
+          addField(`${prefix}_right_${i}`, 'Required')
+        } else if (isNaN(Number(item.right)) && !validOperands.has(item.right)) {
+          addField(`${prefix}_right_${i}`, `"${item.right}" must be a number or a known indicator`)
+        }
       }
     })
   }
@@ -210,6 +244,112 @@ export function validate(f: StrategyFormState): ValidationResult {
 
   return { errors, fieldErrors }
 }
+
+// ── Preset strategies ─────────────────────────────────────────────────────────
+
+export interface Preset {
+  name: string
+  tag: string        // short label shown in the pill
+  description: string
+  state: StrategyFormState
+}
+
+export const PRESET_STRATEGIES: Preset[] = [
+  {
+    name: 'Golden Cross',
+    tag: 'Trend',
+    description: 'Buy when SMA-50 crosses above SMA-200 (price above SMA-50). Exit on death-cross. Classic trend-following on SPY.',
+    state: {
+      exchange: 'yfinance', symbol: 'SPY', freq: '1D',
+      start: '2020-01-01', stop: '2024-12-31',
+      base_balance: 10000, comission: 0.001,
+      datapoints: [
+        { name: 'sma_50',  transformer: 'sma', args: [50] },
+        { name: 'sma_200', transformer: 'sma', args: [200] },
+      ],
+      enter: [
+        { left: 'sma_50', op: '>', right: 'sma_200' },
+        { left: 'close',  op: '>', right: 'sma_50'  },
+      ],
+      exit: [
+        { left: 'sma_50', op: '<', right: 'sma_200' },
+      ],
+    },
+  },
+  {
+    name: 'Turtle Breakout',
+    tag: 'Donchian',
+    description: 'Enter when price hits a new 20-day high (Donchian breakout). Exit on a new 20-day low. Tested on Gold (GLD).',
+    state: {
+      exchange: 'yfinance', symbol: 'GLD', freq: '1D',
+      start: '2018-01-01', stop: '2024-12-31',
+      base_balance: 10000, comission: 0.001,
+      datapoints: [
+        { name: 'high_20', transformer: 'rolling_max', args: [20] },
+        { name: 'low_20',  transformer: 'rolling_min', args: [20] },
+      ],
+      enter: [{ left: 'close', op: '>=', right: 'high_20' }],
+      exit:  [{ left: 'close', op: '<=', right: 'low_20'  }],
+    },
+  },
+  {
+    name: 'RSI Mean Reversion',
+    tag: 'Mean Rev',
+    description: 'Buy dips in an uptrend: RSI oversold (<30) while price is above SMA-200. Exit when RSI recovers above 65.',
+    state: {
+      exchange: 'yfinance', symbol: 'AAPL', freq: '1D',
+      start: '2018-01-01', stop: '2024-12-31',
+      base_balance: 10000, comission: 0.001,
+      datapoints: [
+        { name: 'rsi',     transformer: 'rsi', args: [14]  },
+        { name: 'sma_200', transformer: 'sma', args: [200] },
+      ],
+      enter: [
+        { left: 'rsi',   op: '<', right: '30'      },
+        { left: 'close', op: '>', right: 'sma_200' },
+      ],
+      exit: [{ left: 'rsi', op: '>', right: '65' }],
+    },
+  },
+  {
+    name: 'Bollinger Reversion',
+    tag: 'Mean Rev',
+    description: 'Enter when price falls below the lower Bollinger Band (%B < 0.1) and RSI is weak. Exit when price reaches the upper band. Uses recent 60 days (yfinance intraday limit).',
+    state: {
+      exchange: 'yfinance', symbol: 'BTC-USD', freq: '1h',
+      start: '2026-01-15', stop: '2026-03-15',
+      base_balance: 10000, comission: 0.001,
+      datapoints: [
+        { name: 'pct_b', transformer: 'percent_b', args: [20] },
+        { name: 'rsi',   transformer: 'rsi',       args: [14] },
+      ],
+      enter: [
+        { left: 'pct_b', op: '<', right: '0.1' },
+        { left: 'rsi',   op: '<', right: '40'  },
+      ],
+      exit: [{ left: 'pct_b', op: '>', right: '0.9' }],
+    },
+  },
+  {
+    name: 'Momentum ROC',
+    tag: 'Momentum',
+    description: 'Ride positive momentum: enter when 6-month rate-of-change is positive and price is above SMA-50. Exit on momentum loss.',
+    state: {
+      exchange: 'yfinance', symbol: 'QQQ', freq: '1D',
+      start: '2018-01-01', stop: '2024-12-31',
+      base_balance: 10000, comission: 0.001,
+      datapoints: [
+        { name: 'roc',    transformer: 'roc', args: [126] },
+        { name: 'sma_50', transformer: 'sma', args: [50]  },
+      ],
+      enter: [
+        { left: 'roc',   op: '>', right: '0'      },
+        { left: 'close', op: '>', right: 'sma_50' },
+      ],
+      exit: [{ left: 'roc', op: '<', right: '0' }],
+    },
+  },
+]
 
 // ── Default state ─────────────────────────────────────────────────────────────
 

@@ -2,6 +2,7 @@ import {
   EXCHANGES, EXCHANGE_SYMBOLS, FREQS, OPERATORS, OHLC_COLUMNS,
   TRANSFORMER_GROUPS, defaultArgs,
   type StrategyFormState, type Datapoint, type Rule, type Operator,
+  type OrGroup, type RuleItem,
   validate,
 } from '../lib/strategy'
 
@@ -97,10 +98,37 @@ export function StrategyForm({ state, onChange }: Props) {
   }
 
   const addRule = (side: 'enter' | 'exit') =>
-    set(side, [...state[side], { left: dpNames[0] ?? 'close', op: '<', right: '0' }])
+    set(side, [...state[side], { left: dpNames[0] ?? 'close', op: '<' as Operator, right: '0' }])
 
   const removeRule = (side: 'enter' | 'exit', i: number) =>
     set(side, state[side].filter((_, idx) => idx !== i))
+
+  const updateOrSubRule = (side: 'enter' | 'exit', i: number, j: number, patch: Partial<Rule>) => {
+    const next = state[side].map((item, idx): RuleItem => {
+      if (idx !== i || !('or' in item)) return item
+      return { or: item.or.map((sub, si) => si === j ? { ...sub, ...patch } : sub) }
+    })
+    set(side, next)
+  }
+
+  const addOrGroup = (side: 'enter' | 'exit') =>
+    set(side, [...state[side], { or: [{ left: dpNames[0] ?? 'close', op: '<' as Operator, right: '0' }] }])
+
+  const addOrSubRule = (side: 'enter' | 'exit', i: number) => {
+    const next = state[side].map((item, idx): RuleItem => {
+      if (idx !== i || !('or' in item)) return item
+      return { or: [...item.or, { left: dpNames[0] ?? 'close', op: '<' as Operator, right: '0' }] }
+    })
+    set(side, next)
+  }
+
+  const removeOrSubRule = (side: 'enter' | 'exit', i: number, j: number) => {
+    const next = state[side].map((item, idx): RuleItem => {
+      if (idx !== i || !('or' in item)) return item
+      return { or: item.or.filter((_, si) => si !== j) }
+    })
+    set(side, next)
+  }
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -300,75 +328,131 @@ export function StrategyForm({ state, onChange }: Props) {
           </SectionHeader>
 
           <div className="space-y-2">
-            {state[side].map((rule, i) => (
-              <div key={i} className="flex items-start gap-2">
-
-                {/* Left operand */}
-                <div className="flex-1 min-w-0">
-                  {i === 0 && <label className={cls.label}>Left</label>}
-                  <select
-                    value={rule.left}
-                    onChange={e => updateRule(side, i, { left: e.target.value })}
-                    className={fieldErrors[`${side}_left_${i}`] ? cls.error : cls.select}
-                  >
-                    <optgroup label="OHLC">
-                      {OHLC_COLUMNS.map(c => <option key={c} value={c}>{c}</option>)}
-                    </optgroup>
-                    {dpNames.length > 0 && (
-                      <optgroup label="Indicators">
-                        {dpNames.map(n => <option key={n} value={n}>{n}</option>)}
+            {state[side].map((item, i) => (
+              'or' in item ? (
+                // ── OR group ──────────────────────────────────────────
+                <div key={i} className="border border-amber-900/50 rounded-lg p-3 space-y-2 bg-amber-950/10">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-amber-500 px-1.5 py-0.5 rounded bg-amber-900/30">OR</span>
+                    <button onClick={() => removeRule(side, i)} className={cls.delBtn} title="Remove OR group">×</button>
+                  </div>
+                  {item.or.map((sub, j) => (
+                    <div key={j} className="flex items-start gap-2 pl-2">
+                      {/* Left */}
+                      <div className="flex-1 min-w-0">
+                        <select
+                          value={sub.left}
+                          onChange={e => updateOrSubRule(side, i, j, { left: e.target.value })}
+                          className={fieldErrors[`${side}_or${i}_left_${j}`] ? cls.error : cls.select}
+                        >
+                          <optgroup label="OHLC">
+                            {OHLC_COLUMNS.map(c => <option key={c} value={c}>{c}</option>)}
+                          </optgroup>
+                          {dpNames.length > 0 && (
+                            <optgroup label="Indicators">
+                              {dpNames.map(n => <option key={n} value={n}>{n}</option>)}
+                            </optgroup>
+                          )}
+                        </select>
+                        <FieldError msg={fieldErrors[`${side}_or${i}_left_${j}`]} />
+                      </div>
+                      {/* Op */}
+                      <div className="w-20 shrink-0">
+                        <select value={sub.op} onChange={e => updateOrSubRule(side, i, j, { op: e.target.value as Operator })} className={cls.select}>
+                          {OPERATORS.map(op => <option key={op} value={op}>{op}</option>)}
+                        </select>
+                      </div>
+                      {/* Right */}
+                      <div className="flex-1 min-w-0">
+                        <input
+                          list={`right-${side}-or${i}-${j}`}
+                          value={sub.right}
+                          onChange={e => updateOrSubRule(side, i, j, { right: e.target.value })}
+                          placeholder="value or indicator"
+                          className={fieldCls(!!fieldErrors[`${side}_or${i}_right_${j}`])}
+                        />
+                        <datalist id={`right-${side}-or${i}-${j}`}>
+                          {allOperands.map(n => <option key={n} value={n} />)}
+                          {['0','10','20','30','50','70','80','100'].map(v => <option key={v} value={v} />)}
+                        </datalist>
+                        <FieldError msg={fieldErrors[`${side}_or${i}_right_${j}`]} />
+                      </div>
+                      {/* Delete sub-rule */}
+                      <button onClick={() => removeOrSubRule(side, i, j)} className={cls.delBtn} title="Remove condition">×</button>
+                    </div>
+                  ))}
+                  <button onClick={() => addOrSubRule(side, i)} className={`${cls.addBtn} pl-2 text-amber-500 hover:text-amber-400`}>
+                    <span>+</span> Add condition
+                  </button>
+                </div>
+              ) : (
+                // ── Plain rule ────────────────────────────────────────
+                <div key={i} className="flex items-start gap-2">
+                  {/* Left operand */}
+                  <div className="flex-1 min-w-0">
+                    {i === 0 && <label className={cls.label}>Left</label>}
+                    <select
+                      value={item.left}
+                      onChange={e => updateRule(side, i, { left: e.target.value })}
+                      className={fieldErrors[`${side}_left_${i}`] ? cls.error : cls.select}
+                    >
+                      <optgroup label="OHLC">
+                        {OHLC_COLUMNS.map(c => <option key={c} value={c}>{c}</option>)}
                       </optgroup>
-                    )}
-                  </select>
-                  <FieldError msg={fieldErrors[`${side}_left_${i}`]} />
+                      {dpNames.length > 0 && (
+                        <optgroup label="Indicators">
+                          {dpNames.map(n => <option key={n} value={n}>{n}</option>)}
+                        </optgroup>
+                      )}
+                    </select>
+                    <FieldError msg={fieldErrors[`${side}_left_${i}`]} />
+                  </div>
+                  {/* Operator */}
+                  <div className="w-20 shrink-0">
+                    {i === 0 && <label className={cls.label}>Op</label>}
+                    <select
+                      value={item.op}
+                      onChange={e => updateRule(side, i, { op: e.target.value as Operator })}
+                      className={cls.select}
+                    >
+                      {OPERATORS.map(op => <option key={op} value={op}>{op}</option>)}
+                    </select>
+                  </div>
+                  {/* Right operand */}
+                  <div className="flex-1 min-w-0">
+                    {i === 0 && <label className={cls.label}>Right (value or indicator)</label>}
+                    <input
+                      list={`right-${side}-${i}`}
+                      value={item.right}
+                      onChange={e => updateRule(side, i, { right: e.target.value })}
+                      placeholder="30 or indicator name"
+                      className={fieldCls(!!fieldErrors[`${side}_right_${i}`])}
+                    />
+                    <datalist id={`right-${side}-${i}`}>
+                      {allOperands.map(n => <option key={n} value={n} />)}
+                      {['0', '10', '20', '30', '50', '70', '80', '100'].map(v =>
+                        <option key={v} value={v} />
+                      )}
+                    </datalist>
+                    <FieldError msg={fieldErrors[`${side}_right_${i}`]} />
+                  </div>
+                  {/* Delete rule */}
+                  <div className={i === 0 ? 'pt-5' : 'pt-0'}>
+                    <button onClick={() => removeRule(side, i)} className={cls.delBtn} title="Remove rule">×</button>
+                  </div>
                 </div>
-
-                {/* Operator */}
-                <div className="w-20 shrink-0">
-                  {i === 0 && <label className={cls.label}>Op</label>}
-                  <select
-                    value={rule.op}
-                    onChange={e => updateRule(side, i, { op: e.target.value as Operator })}
-                    className={cls.select}
-                  >
-                    {OPERATORS.map(op => <option key={op} value={op}>{op}</option>)}
-                  </select>
-                </div>
-
-                {/* Right operand — indicator or numeric value */}
-                <div className="flex-1 min-w-0">
-                  {i === 0 && <label className={cls.label}>Right (value or indicator)</label>}
-                  <input
-                    list={`right-${side}-${i}`}
-                    value={rule.right}
-                    onChange={e => updateRule(side, i, { right: e.target.value })}
-                    placeholder="30 or indicator name"
-                    className={fieldCls(!!fieldErrors[`${side}_right_${i}`])}
-                  />
-                  <datalist id={`right-${side}-${i}`}>
-                    {allOperands.map(n => <option key={n} value={n} />)}
-                    {['0', '10', '20', '30', '50', '70', '80', '100'].map(v =>
-                      <option key={v} value={v} />
-                    )}
-                  </datalist>
-                  <FieldError msg={fieldErrors[`${side}_right_${i}`]} />
-                </div>
-
-                {/* Delete rule */}
-                <div className={i === 0 ? 'pt-5' : 'pt-0'}>
-                  <button
-                    onClick={() => removeRule(side, i)}
-                    className={cls.delBtn}
-                    title="Remove rule"
-                  >×</button>
-                </div>
-              </div>
+              )
             ))}
           </div>
 
-          <button onClick={() => addRule(side)} className={`${cls.addBtn} mt-2`}>
-            <span>+</span> Add Rule
-          </button>
+          <div className="flex gap-3 mt-2">
+            <button onClick={() => addRule(side)} className={cls.addBtn}>
+              <span>+</span> Add Rule
+            </button>
+            <button onClick={() => addOrGroup(side)} className={`${cls.addBtn} text-amber-500 hover:text-amber-400`}>
+              <span>+</span> Add OR Group
+            </button>
+          </div>
         </div>
       ))}
 
