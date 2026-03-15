@@ -7,13 +7,13 @@
 #   redis         - Event bus + job queue + cache
 #   data-ingestor - Async market data fetcher (yfinance, Binance, Coinbase)
 #   backtest      - Celery worker: runs backtests + optimizations
-#   scheduler     - Celery Beat: scheduled archive updates
-#   jupyter       - Research environment
-#   dashboard     - Streamlit: interactive research UI
-#   grafana       - Strategy performance dashboards (queries TimescaleDB)
+#   api-gateway   - FastAPI strategy engine
+#   go-proxy      - Security & routing
+#   strategy-lab  - React frontend
+#   cli           - Interactive shell environment
 #
 # Profiles:
-#   (default)     - core infra + jupyter + dashboard + grafana
+#   (default)     - core infra + api + frontend
 #   cli           - interactive shell with full tooling
 # ============================================================
 
@@ -176,101 +176,101 @@ services:
   # CELERY BEAT — SCHEDULER
   # Triggers nightly archive updates, regime re-training
   # ──────────────────────────────────────────────
-  scheduler:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: ft-scheduler
-    restart: unless-stopped
-    command: ["celery", "-A", "fast_trade.tasks", "beat",
-              "--loglevel=info", "--schedule=/data/celerybeat-schedule"]
-    environment:
-      - DATABASE_URL=postgresql://fasttrade:${DB_PASSWORD:-fasttrade_dev}@timescaledb:5432/fasttrade
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - lake_data:/data/lake
-      - ./fast_trade:/app/fast_trade
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - ft-net
+#  scheduler:
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    container_name: ft-scheduler
+#    restart: unless-stopped
+#    command: ["celery", "-A", "fast_trade.tasks", "beat",
+#              "--loglevel=info", "--schedule=/data/celerybeat-schedule"]
+#    environment:
+#      - DATABASE_URL=postgresql://fasttrade:${DB_PASSWORD:-fasttrade_dev}@timescaledb:5432/fasttrade
+#      - REDIS_URL=redis://redis:6379/0
+#      - CELERY_BROKER_URL=redis://redis:6379/1
+#      - PYTHONUNBUFFERED=1
+#    volumes:
+#      - lake_data:/data/lake
+#      - ./fast_trade:/app/fast_trade
+#    depends_on:
+#      timescaledb:
+#        condition: service_healthy
+#      redis:
+#        condition: service_healthy
+#    networks:
+#      - ft-net
 
   # ──────────────────────────────────────────────
   # RESEARCH ENVIRONMENT
   # JupyterLab with full fast-trade SDK + DB access
   # ──────────────────────────────────────────────
-  jupyter:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: ft-jupyter
-    restart: unless-stopped
-    command:
-      - jupyter
-      - lab
-      - "--ip=0.0.0.0"
-      - "--port=8888"
-      - "--no-browser"
-      - "--allow-root"
-      - "--notebook-dir=/data/notebooks"
-      - "--ServerApp.token="
-      - "--ServerApp.password="
-    environment:
-      - ARCHIVE_PATH=/data/lake/bronze
-      - DATABASE_URL=postgresql://fasttrade:${DB_PASSWORD:-fasttrade_dev}@timescaledb:5432/fasttrade
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - notebooks_data:/data/notebooks
-      - lake_data:/data/lake
-      - results_data:/data/results
-      - models_data:/data/models
-      - ./fast_trade:/app/fast_trade
-      - ./notebooks:/data/notebooks/project:ro
-      - ./finta_examples:/data/notebooks/finta_examples:ro
-      - ./test:/data/notebooks/test:ro
-      - ./scripts:/data/notebooks/scripts:ro
-    ports:
-      - "8888:8888"
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - ft-net
+#  jupyter:
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    container_name: ft-jupyter
+#    restart: unless-stopped
+#    command:
+#      - jupyter
+#      - lab
+#      - "--ip=0.0.0.0"
+#      - "--port=8888"
+#      - "--no-browser"
+#      - "--allow-root"
+#      - "--notebook-dir=/data/notebooks"
+#      - "--ServerApp.token="
+#      - "--ServerApp.password="
+#    environment:
+#      - ARCHIVE_PATH=/data/lake/bronze
+#      - DATABASE_URL=postgresql://fasttrade:${DB_PASSWORD:-fasttrade_dev}@timescaledb:5432/fasttrade
+#      - REDIS_URL=redis://redis:6379/0
+#      - CELERY_BROKER_URL=redis://redis:6379/1
+#      - PYTHONUNBUFFERED=1
+#    volumes:
+#      - notebooks_data:/data/notebooks
+#      - lake_data:/data/lake
+#      - results_data:/data/results
+#      - models_data:/data/models
+#      - ./fast_trade:/app/fast_trade
+#      - ./notebooks:/data/notebooks/project:ro
+#      - ./finta_examples:/data/notebooks/finta_examples:ro
+#      - ./test:/data/notebooks/test:ro
+#      - ./scripts:/data/notebooks/scripts:ro
+#    ports:
+#      - "8888:8888"
+#    depends_on:
+#      timescaledb:
+#        condition: service_healthy
+#      redis:
+#        condition: service_healthy
+#    networks:
+#      - ft-net
 
   # ──────────────────────────────────────────────
   # WEB DASHBOARD
   # Streamlit: view backtest results, live signals,
   # portfolio state, regime labels
   # ──────────────────────────────────────────────
-  dashboard:
-    build:
-      context: .
-      dockerfile: infra/dashboard/Dockerfile
-    container_name: ft-dashboard
-    restart: unless-stopped
-    environment:
-      - DATABASE_URL=postgresql://fasttrade:${DB_PASSWORD:-fasttrade_dev}@timescaledb:5432/fasttrade
-      - REDIS_URL=redis://redis:6379/0
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - results_data:/data/results
-      - ./infra/dashboard:/app
-    ports:
-      - "8501:8501"
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-    networks:
-      - ft-net
+#  dashboard:
+#    build:
+#      context: .
+#      dockerfile: infra/dashboard/Dockerfile
+#    container_name: ft-dashboard
+#    restart: unless-stopped
+#    environment:
+#      - DATABASE_URL=postgresql://fasttrade:${DB_PASSWORD:-fasttrade_dev}@timescaledb:5432/fasttrade
+#      - REDIS_URL=redis://redis:6379/0
+#      - PYTHONUNBUFFERED=1
+#    volumes:
+#      - results_data:/data/results
+#      - ./infra/dashboard:/app
+#    ports:
+#      - "8501:8501"
+#    depends_on:
+#      timescaledb:
+#        condition: service_healthy
+#    networks:
+#      - ft-net
 
   # ──────────────────────────────────────────────
   # STRATEGY PERFORMANCE DASHBOARD
@@ -278,28 +278,28 @@ services:
   # Panels: equity curve, drawdown, win rate,
   #         trade log, backtest comparisons.
   # ──────────────────────────────────────────────
-  grafana:
-    image: grafana/grafana:latest
-    container_name: ft-grafana
-    restart: unless-stopped
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
-      - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_INSTALL_PLUGINS=grafana-clock-panel
-      - DB_PASSWORD=${DB_PASSWORD:-fasttrade_dev}
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./infra/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./infra/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
-      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    ports:
-      - "3000:3000"
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-    networks:
-      - ft-net
+#  grafana:
+#    image: grafana/grafana:latest
+#    container_name: ft-grafana
+#    restart: unless-stopped
+#    environment:
+#      - GF_SECURITY_ADMIN_USER=admin
+#      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+#      - GF_USERS_ALLOW_SIGN_UP=false
+#      - GF_INSTALL_PLUGINS=grafana-clock-panel
+#      - DB_PASSWORD=${DB_PASSWORD:-fasttrade_dev}
+#    volumes:
+#      - grafana_data:/var/lib/grafana
+#      - ./infra/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+#      - ./infra/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+#      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+#    ports:
+#      - "3000:3000"
+#    depends_on:
+#      timescaledb:
+#        condition: service_healthy
+#    networks:
+#      - ft-net
 
   # ──────────────────────────────────────────────
   # GO PROXY
@@ -402,7 +402,7 @@ volumes:
   timescaledb_data:
   redis_data:
   lake_data:
-  notebooks_data:
   results_data:
   models_data:
-  grafana_data:
+#  notebooks_data:
+#  grafana_data:

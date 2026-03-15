@@ -14,12 +14,28 @@ def max_last_frames(backtest: dict) -> int:
     flat = list(itertools.chain(*logics))
     max_frames = 0
     for logic in flat:
-        if len(logic) > 3 and logic[3] > max_frames:
+        if isinstance(logic, dict) and "or" in logic:
+            for sub in logic["or"]:
+                if len(sub) > 3 and sub[3] > max_frames:
+                    max_frames = sub[3]
+        elif not isinstance(logic, dict) and len(logic) > 3 and logic[3] > max_frames:
             max_frames = logic[3]
     return max_frames
 
 
 def can_vectorize_logic(df: pd.DataFrame, backtest: dict) -> bool:
+    def check_rule(logic) -> bool:
+        if isinstance(logic, dict) and "or" in logic:
+            return all(check_rule(sub) for sub in logic["or"])
+        return (
+            isinstance(logic[0], str)
+            and logic[0] in df.columns
+            and (
+                isinstance(logic[2], (int, float))
+                or (isinstance(logic[2], str) and logic[2] in df.columns)
+            )
+        )
+
     for logic_group in [
         backtest.get("enter", []),
         backtest.get("exit", []),
@@ -27,56 +43,31 @@ def can_vectorize_logic(df: pd.DataFrame, backtest: dict) -> bool:
         backtest.get("any_exit", []),
     ]:
         for logic in logic_group:
-            if not (
-                isinstance(logic[0], str)
-                and logic[0] in df.columns
-                and (
-                    isinstance(logic[2], (int, float))
-                    or (isinstance(logic[2], str) and logic[2] in df.columns)
-                )
-            ):
+            if not check_rule(logic):
                 return False
     return True
+
+
+def _single_condition(df: pd.DataFrame, logic) -> pd.Series:
+    op = logic[1]
+    left = df[logic[0]]
+    right = df[logic[2]] if isinstance(logic[2], str) and logic[2] in df.columns else logic[2]
+    ops = {
+        ">": left > right, "<": left < right, "=": left == right,
+        "!=": left != right, ">=": left >= right, "<=": left <= right,
+    }
+    return ops.get(op, pd.Series(False, index=df.index))
 
 
 def build_mask(df: pd.DataFrame, logic_list: List, combine_any: bool) -> pd.Series:
     if not logic_list:
         return pd.Series(False, index=df.index)
-    mask = pd.Series(True, index=df.index) if not combine_any else pd.Series(False, index=df.index)
+    mask = pd.Series(not combine_any, index=df.index)
     for logic in logic_list:
-        if isinstance(logic[2], (int, float)):
-            if logic[1] == ">":
-                condition = df[logic[0]] > logic[2]
-            elif logic[1] == "<":
-                condition = df[logic[0]] < logic[2]
-            elif logic[1] == "=":
-                condition = df[logic[0]] == logic[2]
-            elif logic[1] == "!=":
-                condition = df[logic[0]] != logic[2]
-            elif logic[1] == ">=":
-                condition = df[logic[0]] >= logic[2]
-            elif logic[1] == "<=":
-                condition = df[logic[0]] <= logic[2]
-            else:
-                condition = pd.Series(False, index=df.index)
-        elif logic[2] in df.columns:
-            if logic[1] == ">":
-                condition = df[logic[0]] > df[logic[2]]
-            elif logic[1] == "<":
-                condition = df[logic[0]] < df[logic[2]]
-            elif logic[1] == "=":
-                condition = df[logic[0]] == df[logic[2]]
-            elif logic[1] == "!=":
-                condition = df[logic[0]] != df[logic[2]]
-            elif logic[1] == ">=":
-                condition = df[logic[0]] >= df[logic[2]]
-            elif logic[1] == "<=":
-                condition = df[logic[0]] <= df[logic[2]]
-            else:
-                condition = pd.Series(False, index=df.index)
+        if isinstance(logic, dict) and "or" in logic:
+            condition = build_mask(df, logic["or"], combine_any=True)
         else:
-            condition = pd.Series(False, index=df.index)
-
+            condition = _single_condition(df, logic)
         mask = mask | condition if combine_any else mask & condition
     return mask
 

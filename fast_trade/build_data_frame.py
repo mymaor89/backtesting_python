@@ -83,8 +83,22 @@ def prepare_df(df: pd.DataFrame, backtest: dict):
 
     start_time = backtest.get("start")
     stop_time = backtest.get("stop")
-    df = apply_charting_to_df(df, freq, start_time, stop_time)
+    # Apply resampling first but DON'T trim yet so indicators can use previous data
+    df, start_time, stop_time = apply_charting_to_df(df, freq, start_time, stop_time, trim=False)
+    # Apply indicators to the full data (including previous periods fetched for warm-up)
     df = apply_transformers_to_dataframe(df, datapoints)
+
+    # Now trim the dataframe to the actual backtest period
+    if start_time and stop_time:
+        df = df[start_time:stop_time]  # noqa
+    elif start_time and not stop_time:
+        df = df[start_time:]  # noqa
+    elif not start_time and stop_time:
+        df = df[:stop_time]
+
+    # Drop gaps (weekends etc) after trimming.
+    df = df.dropna(subset=["close"])
+
     trailing_stop_loss = backtest.get("trailing_stop_loss", 0)
     if trailing_stop_loss:
         df["trailing_stop_loss"] = df["close"].cummax() * (
@@ -94,7 +108,7 @@ def prepare_df(df: pd.DataFrame, backtest: dict):
     return df
 
 
-def apply_charting_to_df(df: pd.DataFrame, freq: str, start_time: str, stop_time: str):
+def apply_charting_to_df(df: pd.DataFrame, freq: str, start_time: str = None, stop_time: str = None, trim: bool = True):
     """Modifies the dataframe based on the freq, start dates and end dates
     Parameters
     ----------
@@ -103,6 +117,7 @@ def apply_charting_to_df(df: pd.DataFrame, freq: str, start_time: str, stop_time
             see https://pandas.pydata.org/pandas-docs/stable/user_guide/timeseries.html#dateoffset-objects
         start_time: datestring in YYYY-MM-DD HH:MM (ex. 2020-08-31 04:00) of when to begin the backtest
         stop_time: datestring of YYYY-MM-DD HH:MM when to stop the backtest
+        trim: bool, if True, slices the dataframe to the start and stop times
     Returns
         DataFrame, a sorted dataframe ready for consumption by run_backtest
     """
@@ -137,19 +152,21 @@ def apply_charting_to_df(df: pd.DataFrame, freq: str, start_time: str, stop_time
 
     df = df.resample(freq).first()
 
-    if start_time and stop_time:
-        df = df[start_time:stop_time]  # noqa
-    elif start_time and not stop_time:
-        df = df[start_time:]  # noqa
-    elif not start_time and stop_time:
-        df = df[:stop_time]
+    if trim:
+        if start_time and stop_time:
+            df = df[start_time:stop_time]  # noqa
+        elif start_time and not stop_time:
+            df = df[start_time:]  # noqa
+        elif not start_time and stop_time:
+            df = df[:stop_time]
 
     # Drop rows with no real price data (e.g. weekends/holidays in stock data).
     # resample() creates a row for every period in the range; rows with no trades
     # have NaN close and must be excluded before indicators are computed.
-    df = df.dropna(subset=["close"])
+    if trim:
+        df = df.dropna(subset=["close"])
 
-    return df
+    return df, start_time, stop_time
 
 
 def apply_transformers_to_dataframe(
@@ -250,13 +267,22 @@ def process_res_df(df, ind, trans_res):
     -------
     df, dataframe, updated dataframe with the new columns
     """
+    i_name = ind.get("name")
+    transformer = ind.get("transformer")
+
     for key in trans_res.keys().values:
-        i_name = ind.get("name")
         clean_key = key.lower()
         clean_key = clean_key.replace(".", "")
         clean_key = clean_key.replace(" ", "_")
-        # include the name of the transformer in the key
-        df_key = f"{i_name}_{ind.get('transformer')}_{clean_key}"
+
+        # If sub-column name matches transformer name (e.g., 'macd' column in 'macd' transformer),
+        # use the provided indicator name directly.
+        if clean_key == transformer or clean_key == "macd" or clean_key == "ppo":
+            df_key = i_name
+        else:
+            # Otherwise, use indicatorName_subColumn (e.g., 'my_macd_signal')
+            df_key = f"{i_name}_{clean_key}"
+
         df[df_key] = trans_res[key]
 
     return df

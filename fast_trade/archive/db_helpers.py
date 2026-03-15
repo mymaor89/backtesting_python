@@ -175,10 +175,32 @@ def get_kline(
         if isinstance(end_date, str):
             end_date = datetime.datetime.fromisoformat(end_date)
 
+    # Map fast-trade freq strings to the finest yfinance interval that covers them.
+    # yfinance supports: 1m 2m 5m 15m 30m 60m 90m 1h 1d 5d 1wk 1mo 3mo
+    _FT_TO_YF_INTERVAL: dict[str, str] = {
+        "1min": "1m",  "2min": "2m",  "5min": "5m",
+        "15min": "15m", "30min": "30m",
+        "1h": "1h",    "60min": "1h",
+        # yfinance has no 4h/8h/12h — fetch 1h and let resample aggregate
+        "4h": "1h",    "8h": "1h",    "12h": "1h",
+        "1D": "1d",    "1d": "1d",
+    }
+
     def _fetch_yfinance(sym: str, exch: str) -> None:
         """On-demand fetch via yfinance for any symbol not yet in the archive."""
         from fast_trade.services.ingestor import fetch_ohlcv_yfinance, _write_to_parquet
-        df_yf = fetch_ohlcv_yfinance(ticker=sym)
+        yf_interval = _FT_TO_YF_INTERVAL.get(freq, "1h")
+        start_str = start_date.strftime("%Y-%m-%d") if start_date else None
+        # Add one day buffer to end so the stop date is inclusive
+        if end_date:
+            import datetime as _dt
+            end_buf = end_date + _dt.timedelta(days=1)
+            end_str = end_buf.strftime("%Y-%m-%d")
+        else:
+            end_str = None
+        df_yf = fetch_ohlcv_yfinance(
+            ticker=sym, interval=yf_interval, start=start_str, end=end_str
+        )
         if df_yf.empty:
             raise RuntimeError(f"yfinance returned no data for {sym!r}")
         _write_to_parquet(df_yf, sym, exch)
@@ -194,6 +216,12 @@ def get_kline(
                 symbol=symbol, exchange=exchange, start_date=start_date, end_date=end_date
             )
 
+    def _stored_resolution(df_: pd.DataFrame) -> pd.Timedelta:
+        """Return the median candle spacing of stored data."""
+        if len(df_) < 2:
+            return pd.Timedelta("1D")
+        return df_.index.to_series().diff().dropna().median()
+
     df = None
     if os.path.exists(parquet_path):
         df = _safe_read_parquet(parquet_path)
@@ -201,6 +229,32 @@ def get_kline(
             if "date" in df.columns:
                 df = df.set_index("date")
             df.index = pd.to_datetime(df.index)
+            # Re-fetch if the cached data is coarser than needed, or doesn't
+            # cover the requested date range (stale cache).
+            if exchange == "yfinance":
+                needs_refetch = False
+                try:
+                    requested_td = pd.Timedelta(freq)
+                except Exception:
+                    requested_td = None
+                if requested_td is not None and _stored_resolution(df) > requested_td * 1.5:
+                    needs_refetch = True
+                if not needs_refetch and len(df) > 0:
+                    if end_date is not None and pd.Timestamp(end_date) > df.index.max() + pd.Timedelta(days=7):
+                        needs_refetch = True
+                    if start_date is not None and pd.Timestamp(start_date) < df.index.min() - pd.Timedelta(days=7):
+                        needs_refetch = True
+                if needs_refetch:
+                    try:
+                        os.remove(parquet_path)
+                    except OSError:
+                        pass
+                    _fetch_yfinance(symbol, exchange)
+                    df = _safe_read_parquet(parquet_path)
+                    if df is not None:
+                        if "date" in df.columns:
+                            df = df.set_index("date")
+                        df.index = pd.to_datetime(df.index)
 
     if df is None:
         if os.path.exists(sqlite_path):

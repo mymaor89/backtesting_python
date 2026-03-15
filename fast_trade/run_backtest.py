@@ -356,15 +356,26 @@ def _compile_field_accessor(field):
 
 def compile_action_logic(backtest: dict) -> dict:
     def compile_group(logics):
-        return [
-            (
-                _compile_field_accessor(logic[0]),
-                _LOGIC_OPERATORS.get(logic[1]),
-                _compile_field_accessor(logic[2]),
-                logic[3] if len(logic) > 3 else 0,
-            )
-            for logic in logics
-        ]
+        result = []
+        for logic in logics:
+            if isinstance(logic, dict) and "or" in logic:
+                result.append({"or": [
+                    (
+                        _compile_field_accessor(sub[0]),
+                        _LOGIC_OPERATORS.get(sub[1]),
+                        _compile_field_accessor(sub[2]),
+                        sub[3] if len(sub) > 3 else 0,
+                    )
+                    for sub in logic["or"]
+                ]})
+            else:
+                result.append((
+                    _compile_field_accessor(logic[0]),
+                    _LOGIC_OPERATORS.get(logic[1]),
+                    _compile_field_accessor(logic[2]),
+                    logic[3] if len(logic) > 3 else 0,
+                ))
+        return result
 
     return {
         "trailing_stop_loss": bool(backtest.get("trailing_stop_loss")),
@@ -399,20 +410,27 @@ def _take_action_compiled(current_frame, compiled_logics, last_frames=None, requ
         last_frames = []
 
     for compiled_logic in compiled_logics:
-        frames = compiled_logic[3]
-        if frames > 0:
-            if len(last_frames) < frames:
-                if not require_any:
-                    return False
-                continue
-
-            result = True
-            for frame_idx in range(frames):
-                if not _process_compiled_logic(compiled_logic, last_frames[frame_idx]):
-                    result = False
-                    break
+        # OR group: any sub-rule must be True
+        if isinstance(compiled_logic, dict):
+            result = any(
+                _process_compiled_logic(sub, current_frame)
+                for sub in compiled_logic["or"]
+            )
         else:
-            result = _process_compiled_logic(compiled_logic, current_frame)
+            frames = compiled_logic[3]
+            if frames > 0:
+                if len(last_frames) < frames:
+                    if not require_any:
+                        return False
+                    continue
+
+                result = True
+                for frame_idx in range(frames):
+                    if not _process_compiled_logic(compiled_logic, last_frames[frame_idx]):
+                        result = False
+                        break
+            else:
+                result = _process_compiled_logic(compiled_logic, current_frame)
 
         if require_any and result:
             return True

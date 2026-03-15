@@ -22,6 +22,7 @@ export interface Summary {
   num_trades?: number | null
   win_rate?: number | null
   profit_factor?: number | null
+  buy_and_hold_perc?: number | null
   time_in_market?: number | null
   avg_trade_perc?: number | null
   [key: string]: unknown

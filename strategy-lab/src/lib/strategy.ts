@@ -132,7 +132,7 @@ export function strategyToForm(s: Record<string, unknown>): StrategyFormState {
     symbol:       String(s.symbol ?? 'BTC-USD'),
     freq:         String((s.freq ?? s.chart_period) ?? '4h'),
     start:        String(s.start ?? '2026-03-01'),
-    stop:         String(s.stop ?? '2026-03-14'),
+    stop:         String(s.stop ?? '2026-03-15'),
     base_balance: Number(s.base_balance ?? 1000),
     comission:    Number(s.comission ?? 0.001),
     datapoints: ((s.datapoints as unknown[]) ?? []).map(dp => {
@@ -250,103 +250,273 @@ export function validate(f: StrategyFormState): ValidationResult {
 export interface Preset {
   name: string
   tag: string        // short label shown in the pill
+  category: string   // Category grouping
   description: string
   state: StrategyFormState
 }
 
 export const PRESET_STRATEGIES: Preset[] = [
+  // ── Trend Following ────────────────────────────────────────────────────────
   {
-    name: 'Golden Cross',
+    name: 'Golden Cross (SPY)',
     tag: 'Trend',
-    description: 'Buy when SMA-50 crosses above SMA-200 (price above SMA-50). Exit on death-cross. Classic trend-following on SPY.',
+    category: 'Trend Following',
+    description: 'Classic SMA crossover: enter when SMA-50 > SMA-200. Exit when price breaks below SMA-50.',
     state: {
       exchange: 'yfinance', symbol: 'SPY', freq: '1D',
-      start: '2020-01-01', stop: '2024-12-31',
+      start: '2023-01-01', stop: '2025-12-31',
       base_balance: 10000, comission: 0.001,
       datapoints: [
-        { name: 'sma_50',  transformer: 'sma', args: [50] },
+        { name: 'sma_50',  transformer: 'sma', args: [50]  },
+        { name: 'sma_200', transformer: 'sma', args: [200] },
+      ],
+      enter: [{ left: 'sma_50', op: '>', right: 'sma_200' }],
+      exit:  [{ left: 'close',  op: '<', right: 'sma_50'  }],
+    },
+  },
+  {
+    name: 'SuperTrend Ride (BTC)',
+    tag: 'Trend',
+    category: 'Trend Following',
+    description: 'Ride crypto trends using EMA-20 and SMA-200 as filters. Enter when fast crosses slow.',
+    state: {
+      exchange: 'coinbase', symbol: 'BTC-USD', freq: '1h',
+      start: '2026-01-01', stop: '2026-03-15',
+      base_balance: 5000, comission: 0.002,
+      datapoints: [
+        { name: 'ema_20',  transformer: 'ema', args: [20]  },
         { name: 'sma_200', transformer: 'sma', args: [200] },
       ],
       enter: [
-        { left: 'sma_50', op: '>', right: 'sma_200' },
-        { left: 'close',  op: '>', right: 'sma_50'  },
+        { left: 'close', op: '>', right: 'sma_200' },
+        { left: 'close', op: '>', right: 'ema_20'  },
       ],
-      exit: [
-        { left: 'sma_50', op: '<', right: 'sma_200' },
-      ],
+      exit: [{ left: 'close', op: '<', right: 'ema_20' }],
     },
   },
   {
-    name: 'Turtle Breakout',
-    tag: 'Donchian',
-    description: 'Enter when price hits a new 20-day high (Donchian breakout). Exit on a new 20-day low. Tested on Gold (GLD).',
+    name: 'Triple EMA Momentum',
+    tag: 'Trend',
+    category: 'Trend Following',
+    description: 'Uses three EMAs (8, 21, 55) for aggressive trend Following. Enter when aligned. Exit on fast cross.',
     state: {
-      exchange: 'yfinance', symbol: 'GLD', freq: '1D',
-      start: '2018-01-01', stop: '2024-12-31',
+      exchange: 'coinbase', symbol: 'ETH-USD', freq: '4h',
+      start: '2025-01-01', stop: '2025-12-31',
       base_balance: 10000, comission: 0.001,
       datapoints: [
-        { name: 'high_20', transformer: 'rolling_max', args: [20] },
-        { name: 'low_20',  transformer: 'rolling_min', args: [20] },
+        { name: 'ema_8',  transformer: 'ema', args: [8]  },
+        { name: 'ema_21', transformer: 'ema', args: [21] },
+        { name: 'ema_55', transformer: 'ema', args: [55] },
       ],
-      enter: [{ left: 'close', op: '>=', right: 'high_20' }],
-      exit:  [{ left: 'close', op: '<=', right: 'low_20'  }],
+      enter: [
+        { left: 'ema_8',  op: '>', right: 'ema_21' },
+        { left: 'ema_21', op: '>', right: 'ema_55' },
+      ],
+      exit: [{ left: 'ema_8', op: '<', right: 'ema_21' }],
     },
   },
+
+  // ── Mean Reversion ─────────────────────────────────────────────────────────
   {
-    name: 'RSI Mean Reversion',
+    name: 'RSI Oversold Bounce',
     tag: 'Mean Rev',
-    description: 'Buy dips in an uptrend: RSI oversold (<30) while price is above SMA-200. Exit when RSI recovers above 65.',
+    category: 'Mean Reversion',
+    description: 'Catch quick bounces: enter when RSI < 30 and price is above long-term SMA-200.',
     state: {
-      exchange: 'yfinance', symbol: 'AAPL', freq: '1D',
-      start: '2018-01-01', stop: '2024-12-31',
+      exchange: 'yfinance', symbol: 'AAPL', freq: '1h',
+      start: '2025-01-01', stop: '2025-12-31',
       base_balance: 10000, comission: 0.001,
       datapoints: [
-        { name: 'rsi',     transformer: 'rsi', args: [14]  },
+        { name: 'rsi',    transformer: 'rsi', args: [14]  },
         { name: 'sma_200', transformer: 'sma', args: [200] },
       ],
       enter: [
         { left: 'rsi',   op: '<', right: '30'      },
         { left: 'close', op: '>', right: 'sma_200' },
       ],
-      exit: [{ left: 'rsi', op: '>', right: '65' }],
+      exit: [{ left: 'rsi', op: '>', right: '70' }],
     },
   },
   {
-    name: 'Bollinger Reversion',
-    tag: 'Mean Rev',
-    description: 'Enter when price falls below the lower Bollinger Band (%B < 0.1) and RSI is weak. Exit when price reaches the upper band. Uses recent 60 days (yfinance intraday limit).',
+    name: 'Bollinger Band Squeeze',
+    tag: 'Vol',
+    category: 'Volatility',
+    description: 'Volatility expansion: enter when price touches lower BB and RSI is bullish. Exit at upper band.',
     state: {
-      exchange: 'yfinance', symbol: 'BTC-USD', freq: '1h',
-      start: '2026-01-15', stop: '2026-03-15',
-      base_balance: 10000, comission: 0.001,
+      exchange: 'coinbase', symbol: 'SOL-USD', freq: '1h',
+      start: '2026-01-01', stop: '2026-03-15',
+      base_balance: 5000, comission: 0.001,
       datapoints: [
-        { name: 'pct_b', transformer: 'percent_b', args: [20] },
-        { name: 'rsi',   transformer: 'rsi',       args: [14] },
+        { name: 'bb',  transformer: 'bbands', args: [20, 2] },
+        { name: 'rsi', transformer: 'rsi',    args: [14]   },
       ],
       enter: [
-        { left: 'pct_b', op: '<', right: '0.1' },
-        { left: 'rsi',   op: '<', right: '40'  },
+        { left: 'close', op: '<', right: 'bb' },
+        { left: 'rsi',   op: '>', right: '45' },
       ],
-      exit: [{ left: 'pct_b', op: '>', right: '0.9' }],
+      exit: [{ left: 'rsi', op: '>', right: '75' }],
     },
   },
   {
-    name: 'Momentum ROC',
+    name: 'NVDA Pullback Hunter',
+    tag: 'Mean Rev',
+    category: 'Mean Reversion',
+    description: 'Buy dips in high-flyers: %B < 0.2 AND SMA-100 uptrend.',
+    state: {
+      exchange: 'yfinance', symbol: 'NVDA', freq: '1D',
+      start: '2024-01-01', stop: '2025-12-31',
+      base_balance: 10000, comission: 0.001,
+      datapoints: [
+        { name: 'pct_b',   transformer: 'percent_b', args: [20]  },
+        { name: 'sma_100', transformer: 'sma',       args: [100] },
+      ],
+      enter: [
+        { left: 'close', op: '>', right: 'sma_100' },
+        { left: 'pct_b', op: '<', right: '0.2'      },
+      ],
+      exit: [{ left: 'pct_b', op: '>', right: '0.8' }],
+    },
+  },
+
+  // ── Momentum ───────────────────────────────────────────────────────────────
+  {
+    name: 'MACD Momentum (4h)',
     tag: 'Momentum',
-    description: 'Ride positive momentum: enter when 6-month rate-of-change is positive and price is above SMA-50. Exit on momentum loss.',
+    category: 'Momentum',
+    description: 'Crypto 4h momentum: MACD positive crossover + RSI > 50 confirming strength.',
+    state: {
+      exchange: 'coinbase', symbol: 'BTC-USD', freq: '4h',
+      start: '2026-01-01', stop: '2026-03-15',
+      base_balance: 10000, comission: 0.001,
+      datapoints: [
+        { name: 'macd', transformer: 'macd', args: [12, 26, 9] },
+        { name: 'rsi',  transformer: 'rsi',  args: [14]        },
+      ],
+      enter: [
+        { left: 'macd', op: '>', right: '0'  },
+        { left: 'rsi',  op: '>', right: '55' },
+      ],
+      exit: [{ left: 'rsi', op: '>', right: '80' }],
+    },
+  },
+  {
+    name: 'QQQ Dual Momentum',
+    tag: 'Momentum',
+    category: 'Momentum',
+    description: 'Requires positive 3-month ROC (trend filter) AND fast momentum > 2%.',
     state: {
       exchange: 'yfinance', symbol: 'QQQ', freq: '1D',
-      start: '2018-01-01', stop: '2024-12-31',
+      start: '2025-01-01', stop: '2025-12-31',
       base_balance: 10000, comission: 0.001,
       datapoints: [
-        { name: 'roc',    transformer: 'roc', args: [126] },
-        { name: 'sma_50', transformer: 'sma', args: [50]  },
+        { name: 'roc_63', transformer: 'roc', args: [63] },
+        { name: 'roc_21', transformer: 'roc', args: [21] },
       ],
       enter: [
-        { left: 'roc',   op: '>', right: '0'      },
-        { left: 'close', op: '>', right: 'sma_50' },
+        { left: 'roc_63', op: '>', right: '0' },
+        { left: 'roc_21', op: '>', right: '2' },
       ],
-      exit: [{ left: 'roc', op: '<', right: '0' }],
+      exit: [{ left: 'roc_63', op: '<', right: '-2' }],
+    },
+  },
+
+  // ── Breakout ───────────────────────────────────────────────────────────────
+  {
+    name: 'Donchian Breakout (ETH)',
+    tag: 'Breakout',
+    category: 'Breakout',
+    description: 'Enter on 20-period high breakouts. Exit on 10-period lows.',
+    state: {
+      exchange: 'coinbase', symbol: 'ETH-USD', freq: '1h',
+      start: '2025-01-01', stop: '2025-12-31',
+      base_balance: 10000, comission: 0.001,
+      datapoints: [
+        { name: 'high_20', transformer: 'rolling_max', args: [20] },
+        { name: 'low_10',  transformer: 'rolling_min', args: [10] },
+      ],
+      enter: [{ left: 'close', op: '>=', right: 'high_20' }],
+      exit:  [{ left: 'close', op: '<=', right: 'low_10'  }],
+    },
+  },
+  {
+    name: 'Volatility Expansion (TSLA)',
+    tag: 'Vol',
+    category: 'Breakout',
+    description: 'ATR-based breakouts: enter when volatility spikes and price moves up.',
+    state: {
+      exchange: 'yfinance', symbol: 'TSLA', freq: '4h',
+      start: '2025-06-01', stop: '2025-12-31',
+      base_balance: 10000, comission: 0.001,
+      datapoints: [
+        { name: 'atr', transformer: 'atr', args: [14] },
+        { name: 'sma', transformer: 'sma', args: [20] },
+      ],
+      enter: [
+        { left: 'close', op: '>', right: 'sma' },
+        { left: 'atr',   op: '>', right: '5'   },
+      ],
+      exit: [{ left: 'close', op: '<', right: 'sma' }],
+    },
+  },
+
+  // ── Scalping & Short-Term ──────────────────────────────────────────────────
+  {
+    name: 'EMA Cross Scalper',
+    tag: 'Scalp',
+    category: 'Scalping',
+    description: 'Highly aggressive 5m scalping: enter on EMA-5/13 cross. Tight exits.',
+    state: {
+      exchange: 'coinbase', symbol: 'BTC-USD', freq: '5min',
+      start: '2026-03-10', stop: '2026-03-15',
+      base_balance: 1000, comission: 0.0005,
+      datapoints: [
+        { name: 'ema_5',  transformer: 'ema', args: [5]  },
+        { name: 'ema_13', transformer: 'ema', args: [13] },
+      ],
+      enter: [{ left: 'ema_5', op: '>', right: 'ema_13' }],
+      exit:  [{ left: 'ema_5', op: '<', right: 'ema_13' }],
+    },
+  },
+  {
+    name: 'Stochastic Reversal',
+    tag: 'Reversal',
+    category: 'Scalping',
+    description: 'Mean reversion on 15m: enter when Stoch %K crosses %D below 20.',
+    state: {
+      exchange: 'binanceus', symbol: 'ETHUSDT', freq: '15min',
+      start: '2026-03-01', stop: '2026-03-15',
+      base_balance: 2000, comission: 0.001,
+      datapoints: [
+        { name: 'stoch_k', transformer: 'stoch',  args: [14] },
+        { name: 'stoch_d', transformer: 'stochd', args: [3]  },
+      ],
+      enter: [
+        { left: 'stoch_k', op: '<', right: '20'      },
+        { left: 'stoch_k', op: '>', right: 'stoch_d' },
+      ],
+      exit: [{ left: 'stoch_k', op: '>', right: '80' }],
+    },
+  },
+
+  // ── Advanced ───────────────────────────────────────────────────────────────
+  {
+    name: 'Vortex Trend Hunter',
+    tag: 'Advanced',
+    category: 'Advanced',
+    description: 'Uses Vortex Indicator (VI+ > VI-) for trend confirmation + ATR trailing stop logic.',
+    state: {
+      exchange: 'yfinance', symbol: 'NVDA', freq: '1D',
+      start: '2024-01-01', stop: '2025-12-31',
+      base_balance: 10000, comission: 0.001,
+      datapoints: [
+        { name: 'vortex', transformer: 'vortex', args: [14] },
+        { name: 'atr',    transformer: 'atr',    args: [14] },
+      ],
+      enter: [
+        { left: 'vortex', op: '>', right: '1.1' }, // Approximate VI+ > 1.1 logic
+        { left: 'close',  op: '>', right: 'open' },
+      ],
+      exit: [{ left: 'vortex', op: '<', right: '0.9' }],
     },
   },
 ]
@@ -358,7 +528,7 @@ export const DEFAULT_FORM_STATE: StrategyFormState = {
   symbol:       'BTC-USD',
   freq:         '4h',
   start:        '2026-03-01',
-  stop:         '2026-03-14',
+  stop:         '2026-03-15',
   base_balance: 1000,
   comission:    0.001,
   datapoints: [

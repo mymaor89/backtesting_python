@@ -98,7 +98,7 @@ def validate_backtest(backtest):
             }
     freq = backtest.get("freq")
     if freq:
-        if not re.search(r"(^\d{1,4}((T)|(Min)|(H)|(h)|(D)|)$)", freq):
+        if not re.search(r"(^\d{1,4}(T|min|Min|H|h|D|d)?$)", freq):
             backtest_mirror["freq"] = {
                 "error": True,
                 "msgs": ["Chart period not valid"],
@@ -135,9 +135,15 @@ def validate_backtest(backtest):
     def process_logics(logics: list, logic_type: str):
         logic_errors = []
         for logic in logics:
-            res = process_logic(logic, logic_type)
-            if res.get("has_error"):
-                logic_errors.append(res)
+            if isinstance(logic, dict) and "or" in logic:
+                for sub in logic["or"]:
+                    res = process_logic(sub, logic_type)
+                    if res.get("has_error"):
+                        logic_errors.append(res)
+            else:
+                res = process_logic(logic, logic_type)
+                if res.get("has_error"):
+                    logic_errors.append(res)
 
         if len(logic_errors):
             return {"error": True, "msgs": logic_errors}

@@ -44,6 +44,23 @@ interface Props {
 
 export function StrategyForm({ state, onChange }: Props) {
   const { fieldErrors } = validate(state)
+  const applyPreset = (preset: string) => {
+    const end = new Date()
+    const stop = end.toLocaleDateString('en-CA')
+    let begin = new Date()
+
+    switch (preset) {
+      case '1mo': begin.setMonth(end.getMonth() - 1); break
+      case '3mo': begin.setMonth(end.getMonth() - 3); break
+      case '6mo': begin.setMonth(end.getMonth() - 6); break
+      case '1y':  begin.setFullYear(end.getFullYear() - 1); break
+      case 'Ytd': begin = new Date(end.getFullYear(), 0, 1); break
+      case '2y':  begin.setFullYear(end.getFullYear() - 2); break
+      case '5y':  begin.setFullYear(end.getFullYear() - 5); break
+    }
+    const start = begin.toLocaleDateString('en-CA')
+    onChange({ ...state, start, stop })
+  }
 
   const set = <K extends keyof StrategyFormState>(key: K, value: StrategyFormState[K]) =>
     onChange({ ...state, [key]: value })
@@ -90,7 +107,7 @@ export function StrategyForm({ state, onChange }: Props) {
   // ── Rules ──────────────────────────────────────────────────────────────────
 
   const dpNames      = state.datapoints.map(d => d.name).filter(Boolean)
-  const allOperands  = [...OHLC_COLUMNS, ...dpNames]
+  const allOperands  = [...new Set([...OHLC_COLUMNS, ...dpNames])]
 
   const updateRule = (side: 'enter' | 'exit', i: number, patch: Partial<Rule>) => {
     const next = state[side].map((r, idx) => idx === i ? { ...r, ...patch } : r)
@@ -191,6 +208,23 @@ export function StrategyForm({ state, onChange }: Props) {
               className={fieldCls(!!fieldErrors.base_balance)}
             />
             <FieldError msg={fieldErrors.base_balance} />
+          </div>
+
+          {/* Presets */}
+          <div className="col-span-2 flex items-center gap-2 -mb-1">
+            <span className={cls.label + " mb-0"}>Date Presets:</span>
+            <div className="flex flex-wrap gap-1.5">
+              {['1mo', '3mo', '6mo', '1y', 'Ytd', '2y', '5y'].map(p => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => applyPreset(p)}
+                  className="px-2 py-0.5 text-[10px] bg-slate-700 hover:bg-slate-600 active:bg-cyan-900 text-slate-300 rounded border border-slate-600 transition-colors"
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Start */}

@@ -203,18 +203,18 @@ def calculate_time_analysis(df):
 
 def calculate_return_perc(trade_log_df: pd.DataFrame):
     """Calculate return percentage with protection against NaN values"""
-    if trade_log_df.empty:
-        return 0.0
-    try:
-        if trade_log_df.iloc[0].adj_account_value:
-            first_val = float(trade_log_df.iloc[0].adj_account_value)
-            last_val = float(trade_log_df.iloc[-1].adj_account_value)
-            if last_val == 0:
-                return 0.0
-            return_perc = 100 - (first_val / last_val) * 100
-            return 0.0 if pd.isna(return_perc) else float(round(return_perc, 3))
-    except (ZeroDivisionError, ValueError, AttributeError):
-        return 0.0
+    if isinstance(trade_log_df, pd.DataFrame) and not trade_log_df.empty:
+        try:
+            # We use the full backtest dataframe (df) or trade log to get start and end values
+            if "adj_account_value" in trade_log_df.columns:
+                first_val = float(trade_log_df.iloc[0].adj_account_value)
+                last_val = float(trade_log_df.iloc[-1].adj_account_value)
+                if first_val == 0:
+                    return 0.0
+                return_perc = (last_val - first_val) / first_val * 100
+                return 0.0 if pd.isna(return_perc) else float(round(return_perc, 3))
+        except (ZeroDivisionError, ValueError, AttributeError):
+            return 0.0
     return 0.0
 
 
@@ -223,9 +223,9 @@ def calculate_buy_and_hold_perc(df):
     try:
         first_close = float(df.iloc[0].close)
         last_close = float(df.iloc[-1].close)
-        if last_close == 0:
+        if first_close == 0:
             return 0.0
-        buy_and_hold_perc = (1 - (first_close / last_close)) * 100
+        buy_and_hold_perc = (last_close - first_close) / first_close * 100
         return 0.0 if pd.isna(buy_and_hold_perc) else float(round(buy_and_hold_perc, 3))
     except (ZeroDivisionError, ValueError, AttributeError):
         return 0.0

@@ -36,13 +36,22 @@ function toTime(ts: string): UTCTimestamp {
   return Math.floor(new Date(ts).getTime() / 1000) as UTCTimestamp
 }
 
+// lightweight-charts requires strictly ascending timestamps with no duplicates.
+// Deduplicate by keeping the last point per timestamp, then re-sort.
+function dedupe<T extends { time: UTCTimestamp }>(arr: T[]): T[] {
+  const map = new Map<number, T>()
+  for (const item of arr) map.set(item.time as number, item)
+  return [...map.values()].sort((a, b) => (a.time as number) - (b.time as number))
+}
+
 interface Props {
   data: EquityPoint[]
 }
 
 export function EquityChart({ data }: Props) {
-  const priceRef = useRef<HTMLDivElement>(null)
-  const oscRef = useRef<HTMLDivElement>(null)
+  const priceRef   = useRef<HTMLDivElement>(null)
+  const equityRef  = useRef<HTMLDivElement>(null)
+  const oscRef     = useRef<HTMLDivElement>(null)
 
   const { overlayNames, oscNames } = useMemo(() => {
     if (data.length === 0) return { overlayNames: [], oscNames: [] }
@@ -67,9 +76,11 @@ export function EquityChart({ data }: Props) {
       title: 'Price',
     })
     priceSeries.setData(
-      data
-        .filter(d => d.close != null)
-        .map(d => ({ time: toTime(d.ts), value: d.close as number })),
+      dedupe(
+        data
+          .filter(d => d.close != null)
+          .map(d => ({ time: toTime(d.ts), value: d.close as number }))
+      )
     )
 
     // Price-scale overlays (EMA, SMA, ZLEMA, …)
@@ -83,9 +94,11 @@ export function EquityChart({ data }: Props) {
         title: name,
       })
       series.setData(
-        data
-          .filter(d => (d[name] as number | null) != null)
-          .map(d => ({ time: toTime(d.ts), value: d[name] as number })),
+        dedupe(
+          data
+            .filter(d => (d[name] as number | null) != null)
+            .map(d => ({ time: toTime(d.ts), value: d[name] as number }))
+        )
       )
     })
 
@@ -102,9 +115,12 @@ export function EquityChart({ data }: Props) {
         markers.push({ time: toTime(data[i].ts), position: 'aboveBar', color: '#f87171', shape: 'arrowDown', text: 'S', size: 1 })
       }
     }
-    markers.sort((a, b) => (a.time as number) - (b.time as number))
+    // Deduplicate markers by timestamp (keep last per ts) then sort ascending
+    const markerMap = new Map<number, SeriesMarker<UTCTimestamp>>()
+    for (const m of markers) markerMap.set(m.time as number, m)
+    const dedupedMarkers = [...markerMap.values()].sort((a, b) => (a.time as number) - (b.time as number))
 
-    if (markers.length > 0) priceSeries.setMarkers(markers)
+    if (dedupedMarkers.length > 0) priceSeries.setMarkers(dedupedMarkers)
     chart.timeScale().fitContent()
 
     const onResize = () => {
@@ -113,6 +129,63 @@ export function EquityChart({ data }: Props) {
     window.addEventListener('resize', onResize)
     return () => { window.removeEventListener('resize', onResize); chart.remove() }
   }, [data, overlayNames])
+
+  // ── Equity comparison chart (strategy vs buy-and-hold) ──────────────────────
+  useEffect(() => {
+    if (!equityRef.current || data.length === 0) return
+    const chart = makeChart(equityRef.current, 180)
+
+    // Find first point that has both close and adj_equity
+    const firstIdx = data.findIndex(d => d.close != null && d.adj_equity != null)
+    if (firstIdx === -1) return
+
+    const initialEquity = data[firstIdx].adj_equity as number
+    const initialClose  = data[firstIdx].close as number
+
+    // Strategy equity curve
+    const strategySeries = chart.addLineSeries({
+      color: '#818cf8',
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      title: 'Strategy',
+    })
+    strategySeries.setData(
+      dedupe(
+        data
+          .filter(d => d.adj_equity != null)
+          .map(d => ({ time: toTime(d.ts), value: d.adj_equity as number }))
+      )
+    )
+
+    // Buy-and-hold: same initial balance, passively held the asset
+    const bhSeries = chart.addLineSeries({
+      color: '#64748b',
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      title: 'B&H',
+    })
+    bhSeries.setData(
+      dedupe(
+        data
+          .filter(d => d.close != null)
+          .map(d => ({
+            time:  toTime(d.ts),
+            value: initialEquity * ((d.close as number) / initialClose),
+          }))
+      )
+    )
+
+    chart.timeScale().fitContent()
+
+    const onResize = () => {
+      if (equityRef.current) chart.applyOptions({ width: equityRef.current.clientWidth })
+    }
+    window.addEventListener('resize', onResize)
+    return () => { window.removeEventListener('resize', onResize); chart.remove() }
+  }, [data])
 
   // ── Oscillator chart (RSI, MACD, …) ─────────────────────────────────────────
   useEffect(() => {
@@ -128,9 +201,11 @@ export function EquityChart({ data }: Props) {
         title: name,
       })
       series.setData(
-        data
-          .filter(d => (d[name] as number | null) != null)
-          .map(d => ({ time: toTime(d.ts), value: d[name] as number })),
+        dedupe(
+          data
+            .filter(d => (d[name] as number | null) != null)
+            .map(d => ({ time: toTime(d.ts), value: d[name] as number }))
+        )
       )
     })
 
@@ -178,6 +253,14 @@ export function EquityChart({ data }: Props) {
           </span>
         ))}
         <span className="flex items-center gap-1.5">
+          <span className="w-4 h-0.5 bg-indigo-400 inline-block rounded" />
+          <span className="text-slate-400">Strategy</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-4 h-px inline-block rounded border-t-2 border-dashed border-slate-500" />
+          <span className="text-slate-400">Buy &amp; Hold</span>
+        </span>
+        <span className="flex items-center gap-1.5">
           <span className="text-green-400 text-xs">▲B</span>
           <span className="text-red-400 text-xs">▼S</span>
           <span className="text-slate-500">trades</span>
@@ -186,6 +269,11 @@ export function EquityChart({ data }: Props) {
 
       {/* Price + overlays */}
       <div ref={priceRef} className="w-full rounded overflow-hidden" />
+
+      {/* Equity vs Buy-and-Hold */}
+      <div className="border-t border-slate-800">
+        <div ref={equityRef} className="w-full rounded overflow-hidden" />
+      </div>
 
       {/* Oscillators */}
       {oscNames.length > 0 && (
