@@ -14,3 +14,4 @@ saved_backtests/*
 gi_*
 .pypirc
 ft_archive/*
+node_modules/
