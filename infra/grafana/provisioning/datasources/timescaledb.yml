@@ -1,0 +1,15 @@
+apiVersion: 1
+datasources:
+  - name: FastTrade-DB
+    type: postgres
+    uid: fasttrade-tsdb
+    url: timescaledb:5432
+    database: fasttrade
+    user: fasttrade
+    secureJsonData:
+      password: ${DB_PASSWORD}
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: true
+    isDefault: true

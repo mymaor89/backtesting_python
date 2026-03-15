@@ -1,5 +1,6 @@
 import datetime
 import os
+import re
 import sqlite3
 import typing
 
@@ -217,6 +218,10 @@ def get_kline(
 
     if df is None:
         raise RuntimeError(f"Failed to load parquet for {exchange}:{symbol}; file was corrupted or missing")
+
+    # normalize deprecated uppercase pandas freq aliases (e.g. H->h, T->min, S->s)
+    _freq_map = {"H": "h", "T": "min", "S": "s", "M": "ME"}
+    freq = re.sub(r"([A-Z]+)$", lambda m: _freq_map.get(m.group(1), m.group(1)), freq)
 
     # set the freq of the dataframe
     df = df.resample(freq).agg(

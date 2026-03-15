@@ -1,0 +1,270 @@
+{
+  "title": "Strategy Performance",
+  "uid": "ft-strategy-perf",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-90d", "to": "now" },
+  "timezone": "browser",
+  "tags": ["fasttrade", "strategy"],
+  "templating": {
+    "list": [
+      {
+        "name": "portfolio",
+        "label": "Portfolio",
+        "type": "query",
+        "datasource": { "uid": "fasttrade-tsdb" },
+        "query": "SELECT DISTINCT portfolio_name FROM trades WHERE portfolio_name IS NOT NULL ORDER BY 1",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false
+      },
+      {
+        "name": "symbol",
+        "label": "Symbol",
+        "type": "query",
+        "datasource": { "uid": "fasttrade-tsdb" },
+        "query": "SELECT DISTINCT symbol FROM trades ORDER BY 1",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+
+    {
+      "id": 1,
+      "title": "Cumulative P&L (%)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 16, "h": 9 },
+      "datasource": { "uid": "fasttrade-tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 0 }
+            ]
+          }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "uid": "fasttrade-tsdb" },
+          "rawSql": "SELECT\n  ts AS time,\n  portfolio_name AS metric,\n  SUM(pnl_perc) OVER (PARTITION BY portfolio_name ORDER BY ts) AS value\nFROM trades\nWHERE pnl_perc IS NOT NULL\n  AND portfolio_name ~ '$portfolio'\n  AND symbol ~ '$symbol'\n  AND $__timeFilter(ts)\nORDER BY ts",
+          "format": "time_series"
+        }
+      ]
+    },
+
+    {
+      "id": 2,
+      "title": "Win Rate",
+      "type": "gauge",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "fasttrade-tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0, "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red",    "value": null },
+              { "color": "yellow", "value": 40 },
+              { "color": "green",  "value": 55 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "uid": "fasttrade-tsdb" },
+          "rawSql": "SELECT\n  NOW() AS time,\n  ROUND(100.0 * COUNT(*) FILTER (WHERE pnl_perc > 0) / NULLIF(COUNT(*),0), 1) AS value\nFROM trades\nWHERE action = 'exit'\n  AND portfolio_name ~ '$portfolio'\n  AND symbol ~ '$symbol'\n  AND $__timeFilter(ts)",
+          "format": "time_series"
+        }
+      ]
+    },
+
+    {
+      "id": 3,
+      "title": "Total Return (%)",
+      "type": "stat",
+      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "fasttrade-tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red",   "value": null },
+              { "color": "green", "value": 0 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "uid": "fasttrade-tsdb" },
+          "rawSql": "SELECT\n  NOW() AS time,\n  ROUND(CAST(SUM(pnl_perc) AS numeric), 2) AS value\nFROM trades\nWHERE pnl_perc IS NOT NULL\n  AND portfolio_name ~ '$portfolio'\n  AND symbol ~ '$symbol'\n  AND $__timeFilter(ts)",
+          "format": "time_series"
+        }
+      ]
+    },
+
+    {
+      "id": 4,
+      "title": "Total Trades",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 4, "w": 4, "h": 4 },
+      "datasource": { "uid": "fasttrade-tsdb" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        {
+          "datasource": { "uid": "fasttrade-tsdb" },
+          "rawSql": "SELECT NOW() AS time, COUNT(*) AS value\nFROM trades\nWHERE action IN ('exit','tsl')\n  AND portfolio_name ~ '$portfolio'\n  AND symbol ~ '$symbol'\n  AND $__timeFilter(ts)",
+          "format": "time_series"
+        }
+      ]
+    },
+
+    {
+      "id": 5,
+      "title": "Avg P&L per Trade (%)",
+      "type": "stat",
+      "gridPos": { "x": 20, "y": 4, "w": 4, "h": 4 },
+      "datasource": { "uid": "fasttrade-tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red",   "value": null },
+              { "color": "green", "value": 0 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "uid": "fasttrade-tsdb" },
+          "rawSql": "SELECT\n  NOW() AS time,\n  ROUND(CAST(AVG(pnl_perc) AS numeric), 3) AS value\nFROM trades\nWHERE pnl_perc IS NOT NULL\n  AND portfolio_name ~ '$portfolio'\n  AND symbol ~ '$symbol'\n  AND $__timeFilter(ts)",
+          "format": "time_series"
+        }
+      ]
+    },
+
+    {
+      "id": 6,
+      "title": "Drawdown (%)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 9, "w": 16, "h": 7 },
+      "datasource": { "uid": "fasttrade-tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "fixedColor": "red", "mode": "fixed" },
+          "custom": { "lineWidth": 1, "fillOpacity": 20 }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "uid": "fasttrade-tsdb" },
+          "rawSql": "WITH cum AS (\n  SELECT\n    ts,\n    portfolio_name,\n    SUM(pnl_perc) OVER (PARTITION BY portfolio_name ORDER BY ts) AS cum_pnl\n  FROM trades\n  WHERE pnl_perc IS NOT NULL\n    AND portfolio_name ~ '$portfolio'\n    AND symbol ~ '$symbol'\n    AND $__timeFilter(ts)\n),\npeak AS (\n  SELECT\n    ts,\n    portfolio_name,\n    cum_pnl,\n    MAX(cum_pnl) OVER (PARTITION BY portfolio_name ORDER BY ts) AS running_peak\n  FROM cum\n)\nSELECT\n  ts AS time,\n  portfolio_name AS metric,\n  ROUND(CAST(cum_pnl - running_peak AS numeric), 2) AS value\nFROM peak\nORDER BY ts",
+          "format": "time_series"
+        }
+      ]
+    },
+
+    {
+      "id": 7,
+      "title": "P&L per Trade",
+      "type": "barchart",
+      "gridPos": { "x": 16, "y": 9, "w": 8, "h": 7 },
+      "datasource": { "uid": "fasttrade-tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red",   "value": null },
+              { "color": "green", "value": 0 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "uid": "fasttrade-tsdb" },
+          "rawSql": "SELECT\n  ts AS time,\n  ROUND(CAST(pnl_perc AS numeric), 2) AS \"P&L %\"\nFROM trades\nWHERE pnl_perc IS NOT NULL\n  AND portfolio_name ~ '$portfolio'\n  AND symbol ~ '$symbol'\n  AND $__timeFilter(ts)\nORDER BY ts",
+          "format": "time_series"
+        }
+      ]
+    },
+
+    {
+      "id": 8,
+      "title": "Recent Trades",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 8 },
+      "datasource": { "uid": "fasttrade-tsdb" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "pnl_perc" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "custom.displayMode", "value": "color-background" },
+              { "id": "thresholds",
+                "value": { "mode": "absolute",
+                  "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 0 }]
+                }
+              }
+            ]
+          },
+          { "matcher": { "id": "byName", "options": "price" },
+            "properties": [{ "id": "unit", "value": "currencyUSD" }]
+          }
+        ]
+      },
+      "options": { "sortBy": [{ "displayName": "ts", "desc": true }] },
+      "targets": [
+        {
+          "datasource": { "uid": "fasttrade-tsdb" },
+          "rawSql": "SELECT\n  ts,\n  portfolio_name,\n  symbol,\n  action,\n  ROUND(CAST(price AS numeric), 4)    AS price,\n  ROUND(CAST(qty AS numeric), 6)      AS qty,\n  ROUND(CAST(pnl_perc AS numeric), 3) AS pnl_perc,\n  hold_bars\nFROM trades\nWHERE portfolio_name ~ '$portfolio'\n  AND symbol ~ '$symbol'\n  AND $__timeFilter(ts)\nORDER BY ts DESC\nLIMIT 200",
+          "format": "table"
+        }
+      ]
+    },
+
+    {
+      "id": 9,
+      "title": "Backtest Runs",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 24, "w": 24, "h": 7 },
+      "datasource": { "uid": "fasttrade-tsdb" },
+      "targets": [
+        {
+          "datasource": { "uid": "fasttrade-tsdb" },
+          "rawSql": "SELECT\n  r.started_at                           AS started,\n  s.name                                 AS strategy,\n  r.status,\n  r.summary->>'return_perc'              AS \"return %\",\n  r.summary->>'sharpe_ratio'             AS sharpe,\n  r.summary->>'max_drawdown'             AS \"max DD\",\n  r.summary->>'num_trades'               AS trades,\n  r.summary->>'win_perc'                 AS \"win %\",\n  r.summary->>'buy_and_hold_perc'        AS \"B&H %\"\nFROM backtest_runs r\nLEFT JOIN strategies s ON r.strategy_id = s.id\nWHERE $__timeFilter(r.started_at)\nORDER BY r.started_at DESC\nLIMIT 100",
+          "format": "table"
+        }
+      ]
+    }
+
+  ]
+}

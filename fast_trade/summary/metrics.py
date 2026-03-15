@@ -128,6 +128,15 @@ def calculate_trade_streaks(trade_log_df):
         win_streak_counts = win_streaks.value_counts()
         loss_streak_counts = loss_streaks.value_counts()
 
+        if trades.empty:
+            return {
+                "current_streak": 0,
+                "max_win_streak": 0,
+                "max_loss_streak": 0,
+                "avg_win_streak": 0.0,
+                "avg_loss_streak": 0.0,
+            }
+
         # Count contiguous streak from the end
         last_val = trades.iloc[-1]
         current_streak = 0

@@ -1,0 +1,16 @@
+.git
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.ruff_cache
+*.egg-info
+dist/
+build/
+.env
+test/
+scripts/
+*.md
+docker-compose.yml
+Dockerfile
