@@ -175,13 +175,24 @@ def get_kline(
         if isinstance(end_date, str):
             end_date = datetime.datetime.fromisoformat(end_date)
 
-    # if the db exists, if not try and downlaod it
-    if not os.path.exists(parquet_path) and not os.path.exists(sqlite_path):
-        import fast_trade.archive.update_kline as update_kline
+    def _fetch_yfinance(sym: str, exch: str) -> None:
+        """On-demand fetch via yfinance for any symbol not yet in the archive."""
+        from fast_trade.services.ingestor import fetch_ohlcv_yfinance, _write_to_parquet
+        df_yf = fetch_ohlcv_yfinance(ticker=sym)
+        if df_yf.empty:
+            raise RuntimeError(f"yfinance returned no data for {sym!r}")
+        _write_to_parquet(df_yf, sym, exch)
 
-        update_kline.update_kline(
-            symbol=symbol, exchange=exchange, start_date=start_date, end_date=end_date
-        )
+    # if the db exists, if not try and download it
+    if not os.path.exists(parquet_path) and not os.path.exists(sqlite_path):
+        if exchange == "yfinance":
+            _fetch_yfinance(symbol, exchange)
+        else:
+            import fast_trade.archive.update_kline as update_kline
+
+            update_kline.update_kline(
+                symbol=symbol, exchange=exchange, start_date=start_date, end_date=end_date
+            )
 
     df = None
     if os.path.exists(parquet_path):
@@ -206,11 +217,14 @@ def get_kline(
             df = df.set_index("date")
             _atomic_write_parquet(df, parquet_path, index=True)
         else:
-            import fast_trade.archive.update_kline as update_kline
+            if exchange == "yfinance":
+                _fetch_yfinance(symbol, exchange)
+            else:
+                import fast_trade.archive.update_kline as update_kline
 
-            update_kline.update_kline(
-                symbol=symbol, exchange=exchange, start_date=start_date, end_date=end_date
-            )
+                update_kline.update_kline(
+                    symbol=symbol, exchange=exchange, start_date=start_date, end_date=end_date
+                )
             if os.path.exists(parquet_path):
                 df = _safe_read_parquet(parquet_path)
                 if df is not None:

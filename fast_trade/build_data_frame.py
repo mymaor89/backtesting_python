@@ -144,6 +144,11 @@ def apply_charting_to_df(df: pd.DataFrame, freq: str, start_time: str, stop_time
     elif not start_time and stop_time:
         df = df[:stop_time]
 
+    # Drop rows with no real price data (e.g. weekends/holidays in stock data).
+    # resample() creates a row for every period in the range; rows with no trades
+    # have NaN close and must be excluded before indicators are computed.
+    df = df.dropna(subset=["close"])
+
     return df
 
 
@@ -169,6 +174,10 @@ def apply_transformers_to_dataframe(
     -------
         df, a modified dataframe with all the datapoints calculated as columns
     """
+
+    # Remember which rows carry real price data before asfreq() introduces gaps
+    # (e.g. weekends/holidays for stock data).
+    real_index = df.index.copy()
 
     base_freq = infer_frequency(df)
     # set the freq of the dataframe
@@ -217,6 +226,11 @@ def apply_transformers_to_dataframe(
             df[field_name] = trans_res
 
         df = df.asfreq(base_freq).ffill()
+
+    # Drop gap rows re-introduced by asfreq() (weekends/holidays).
+    # Indicators were computed on the filled series (correct), but the
+    # backtest should only iterate over bars that had actual trades.
+    df = df[df.index.isin(real_index)]
 
     return df
 
@@ -337,13 +351,13 @@ def infer_frequency(df: pd.DataFrame) -> str:
 
     # Convert seconds to appropriate frequency string
     if seconds < 60:
-        return f"{int(seconds)}S"
+        return f"{int(seconds)}s"
     elif seconds < 3600:
         minutes = int(seconds / 60)
-        return f"{minutes}Min"
+        return f"{minutes}min"
     elif seconds < 86400:
         hours = int(seconds / 3600)
-        return f"{hours}H"
+        return f"{hours}h"
     else:
         days = int(seconds / 86400)
         return f"{days}D"

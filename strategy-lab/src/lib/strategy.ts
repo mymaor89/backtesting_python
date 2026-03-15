@@ -29,15 +29,16 @@ export interface StrategyFormState {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-export const EXCHANGES = ['coinbase', 'binanceus', 'binancecom'] as const
+export const EXCHANGES = ['coinbase', 'binanceus', 'binancecom', 'yfinance'] as const
 
 export const EXCHANGE_SYMBOLS: Record<string, string[]> = {
   coinbase:   ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD', 'XRP-USD', 'ADA-USD', 'AVAX-USD', 'LINK-USD', 'MATIC-USD'],
   binanceus:  ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT', 'BNBUSDT', 'ADAUSDT', 'AVAXUSDT', 'MATICUSDT'],
   binancecom: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT', 'BNBUSDT', 'ADAUSDT', 'AVAXUSDT', 'MATICUSDT'],
+  yfinance:   ['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'GLD', 'TLT', 'IWM'],
 }
 
-export const FREQS = ['1Min', '5Min', '15Min', '30Min', '1h', '4h', '8h', '12h', '1D'] as const
+export const FREQS = ['1min', '5min', '15min', '30min', '1h', '4h', '8h', '12h', '1D'] as const
 
 export const OPERATORS: Operator[] = ['<', '>', '=', '!=', '>=', '<=']
 
@@ -158,6 +159,7 @@ export function validate(f: StrategyFormState): ValidationResult {
   } else if (['binanceus', 'binancecom'].includes(f.exchange) && f.symbol.includes('-')) {
     addField('symbol', 'Binance symbols must not contain a dash — e.g. BTCUSDT')
   }
+  // yfinance accepts any ticker format (SPY, AAPL, BTC-USD, etc.)
 
   // Dates
   if (!f.start) addField('start', 'Start date required')

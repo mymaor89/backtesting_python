@@ -716,8 +716,11 @@ class TA:
         _gain = up.ewm(alpha=1.0 / period, adjust=adjust).mean()
         _loss = down.abs().ewm(alpha=1.0 / period, adjust=adjust).mean()
 
-        RS = _gain / _loss
-        return pd.Series(100 - (100 / (1 + RS)), name="{0} period RSI".format(period))
+        RS = _gain / _loss.replace(0, float("nan"))
+        return pd.Series(
+            (100 - (100 / (1 + RS))).fillna(100),
+            name="{0} period RSI".format(period),
+        )
 
     @classmethod
     def IFT_RSI(

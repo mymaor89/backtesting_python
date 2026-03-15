@@ -50,10 +50,12 @@ export function StrategyForm({ state, onChange }: Props) {
   // When exchange changes, auto-correct symbol if format is incompatible
   const onExchangeChange = (exchange: string) => {
     let symbol = state.symbol
-    const needsDash    = exchange === 'coinbase'
-    const hasDash      = symbol.includes('-')
-    if (needsDash && !hasDash) symbol = EXCHANGE_SYMBOLS[exchange][0]
-    if (!needsDash && hasDash) symbol = EXCHANGE_SYMBOLS[exchange][0]
+    const needsDash = exchange === 'coinbase'
+    const hasDash   = symbol.includes('-')
+    const isCrypto  = ['coinbase', 'binanceus', 'binancecom'].includes(exchange)
+    // Reset to a known-good symbol when switching between crypto and yfinance
+    if (!isCrypto || (needsDash && !hasDash) || (!needsDash && hasDash))
+      symbol = EXCHANGE_SYMBOLS[exchange][0]
     onChange({ ...state, exchange, symbol })
   }
 
@@ -131,7 +133,7 @@ export function StrategyForm({ state, onChange }: Props) {
               value={state.symbol}
               onChange={e => set('symbol', e.target.value.toUpperCase())}
               className={fieldCls(!!fieldErrors.symbol)}
-              placeholder={state.exchange === 'coinbase' ? 'BTC-USD' : 'BTCUSDT'}
+              placeholder={state.exchange === 'coinbase' ? 'BTC-USD' : state.exchange === 'yfinance' ? 'SPY' : 'BTCUSDT'}
             />
             <datalist id="symbol-suggestions">
               {(EXCHANGE_SYMBOLS[state.exchange] ?? []).map(s => <option key={s} value={s} />)}
