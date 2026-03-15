@@ -51,6 +51,15 @@ _SYSTEM_COLS = frozenset([
     "open", "high", "low", "close", "volume", "action",
 ])
 
+_ACTION_LABELS: dict[str, str] = {
+    "e":   "Enter",
+    "ae":  "Enter",
+    "x":   "Exit",
+    "ax":  "Exit",
+    "tsl": "Exit (TSL)",
+    "h":   "Hold",
+}
+
 
 def equity_curve_to_json(df: pd.DataFrame) -> list[dict[str, Any]]:
     """
@@ -88,6 +97,7 @@ def equity_curve_to_json(df: pd.DataFrame) -> list[dict[str, Any]]:
             "equity":     _safe_float(row.get("account_value")),
             "adj_equity": _safe_float(row.get("adj_account_value")),
             "action":     str(row.get("action", "h")),
+            "in_trade":   bool(row.get("in_trade", False)),
             "close":      _safe_float(row.get("close")),
             "open":       _safe_float(row.get("open")),
             "high":       _safe_float(row.get("high")),
@@ -123,7 +133,11 @@ def trade_log_to_json(trade_log_df: pd.DataFrame) -> list[dict[str, Any]]:
             "date": pd.Timestamp(idx).isoformat() if idx is not None else None
         }
         for col in trade_log_df.columns:
-            record[col] = _clean_value(row[col])
+            if col == "action":
+                raw = str(row[col])
+                record[col] = _ACTION_LABELS.get(raw, raw)
+            else:
+                record[col] = _clean_value(row[col])
         records.append(record)
 
     return records

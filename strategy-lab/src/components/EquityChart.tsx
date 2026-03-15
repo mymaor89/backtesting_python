@@ -7,7 +7,7 @@ import type { EquityPoint } from '../types/api'
 const OSCILLATOR_KEYWORDS = ['rsi', 'macd', 'stoch', 'cci', 'roc', 'momentum', 'mfi', 'adx', 'williams', 'dpo', 'trix', 'ppo']
 
 // Fields that are NOT user-defined indicators
-const KNOWN_FIELDS = new Set(['ts', 'equity', 'adj_equity', 'action', 'close', 'open', 'high', 'low'])
+const KNOWN_FIELDS = new Set(['ts', 'equity', 'adj_equity', 'action', 'in_trade', 'close', 'open', 'high', 'low'])
 
 // Colour palette for indicator lines
 const INDICATOR_COLORS = ['#f59e0b', '#a78bfa', '#34d399', '#fb923c', '#60a5fa', '#f472b6', '#e879f9']
@@ -89,18 +89,20 @@ export function EquityChart({ data }: Props) {
       )
     })
 
-    // Buy / sell markers
-    const markers: SeriesMarker<UTCTimestamp>[] = data
-      .filter(d => d.action !== 'h')
-      .map(d => ({
-        time: toTime(d.ts),
-        position: d.action === 'e' ? ('belowBar' as const) : ('aboveBar' as const),
-        color: d.action === 'e' ? '#22c55e' : '#f87171',
-        shape: d.action === 'e' ? ('arrowUp' as const) : ('arrowDown' as const),
-        text: d.action === 'e' ? 'B' : 'S',
-        size: 1,
-      }))
-      .sort((a, b) => (a.time as number) - (b.time as number))
+    // Buy / sell markers — detect actual in_trade transitions only.
+    // False→True = trade opened (B), True→False = trade closed (S).
+    // This correctly ignores duplicate signals that fire while already in/out of a position.
+    const markers: SeriesMarker<UTCTimestamp>[] = []
+    for (let i = 0; i < data.length; i++) {
+      const prev = i > 0 ? !!data[i - 1].in_trade : false
+      const curr = !!data[i].in_trade
+      if (!prev && curr) {
+        markers.push({ time: toTime(data[i].ts), position: 'belowBar', color: '#22c55e', shape: 'arrowUp', text: 'B', size: 1 })
+      } else if (prev && !curr) {
+        markers.push({ time: toTime(data[i].ts), position: 'aboveBar', color: '#f87171', shape: 'arrowDown', text: 'S', size: 1 })
+      }
+    }
+    markers.sort((a, b) => (a.time as number) - (b.time as number))
 
     if (markers.length > 0) priceSeries.setMarkers(markers)
     chart.timeScale().fitContent()

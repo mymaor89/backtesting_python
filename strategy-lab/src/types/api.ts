@@ -3,6 +3,7 @@ export interface EquityPoint {
   equity: number | null
   adj_equity: number | null
   action: string
+  in_trade?: boolean
   close?: number | null
   open?: number | null
   high?: number | null

@@ -58,6 +58,9 @@ def calculate_effective_trades(df, trade_log_df):
     }
 
 
+_TRADE_ACTIONS = frozenset(['e', 'ae', 'x', 'ax', 'tsl'])
+
+
 def create_trade_log(df):
     """Find all rows when a trade was entered or exited"""
     trade_log_df = df.reset_index()
@@ -69,7 +72,12 @@ def create_trade_log(df):
         trade_log_df = trade_log_df.set_index("date")
 
     trade_log_df = trade_log_df.replace([np.inf, -np.inf], np.nan)
-    trade_log_df = trade_log_df[trade_log_df.adj_account_value_change != 0]
+    # Keep only rows where a trade action was actually executed.
+    # This prevents 'h' (hold) rows — e.g. the initial pre-trade group whose
+    # adj_account_value_change is NaN (NaN != 0 is True in pandas) — from
+    # leaking into the log.
+    if "action" in trade_log_df.columns:
+        trade_log_df = trade_log_df[trade_log_df["action"].isin(_TRADE_ACTIONS)]
 
     return trade_log_df
 
