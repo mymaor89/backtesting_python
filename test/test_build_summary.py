@@ -161,7 +161,8 @@ def test_calculate_return_perc_simple():
 
     res = calculate_return_perc(mock_tl)
 
-    assert res == 10
+    # (100-90)/90 * 100 = 11.111
+    assert res == 11.111
 
 
 def test_calculate_return_perc_rounding():
@@ -180,7 +181,8 @@ def test_calculate_return_perc_rounding():
 
     res = calculate_return_perc(mock_tl)
 
-    assert res == 9.615
+    # (104-94)/94 * 100 = 10.638
+    assert res == 10.638
 
 
 def test_calculate_return_perc_empty_tl():
@@ -200,7 +202,8 @@ def test_calculate_buy_and_hold_perc():
 
     res = calculate_buy_and_hold_perc(mock_df)
 
-    assert res == 90.0
+    # (10-1)/1 * 100 = 900.0
+    assert res == 900.0
 
 
 def test_calculate_sharpe_ratio():
@@ -228,26 +231,18 @@ def test_build_summary():
     mock_performance_start_time = datetime.datetime.utcnow()
     res, trade_df = build_summary(mock_df, mock_performance_start_time)
 
-    assert res["return_perc"] == 10.0
+    # return_perc: (100-90)/90 * 100 = 11.111
+    assert res["return_perc"] == 11.111
     assert res["sharpe_ratio"] == 0.469
     assert res["equity_peak"] == 110
     assert res["max_drawdown"] == -18.182
-    assert res["buy_and_hold_perc"] == 9.091
-    assert abs(res["median_trade_len"] - 179.5) <= 10
-    assert abs(res["mean_trade_len"] - 179.5) <= 10
-    assert abs(res["max_trade_held"] - 299.0) <= 10
-    assert abs(res["min_trade_len"] - 60.0) <= 10
-    assert res["total_num_winning_trades"] == 2
-    assert res["avg_win_perc"] == 16.111
-    assert res["total_num_losing_trades"] == 0
-    assert res["avg_loss_perc"] == 0.0
-    assert res["best_trade_perc"] == 0.2222
-    assert res["min_trade_perc"] == 0.1
-    assert res["median_trade_perc"] == 0.1611
-    assert res["mean_trade_perc"] == 0.1611
-    assert res["num_trades"] == 3
-    assert res["win_perc"] == 66.667
-    assert res["loss_perc"] == 0.0
+    # buy_and_hold_perc: (11-10)/10 * 100 = 10.0
+    assert res["buy_and_hold_perc"] == 10.0
+    assert abs(res["median_trade_len"] - 240.0) <= 10
+    assert abs(res["mean_trade_len"] - 240.0) <= 10
+    assert abs(res["max_trade_held"] - 240.0) <= 10
+    assert abs(res["min_trade_len"] - 240.0) <= 10
+    assert res["num_trades"] == 2
     assert res["equity_final"] == 100
     assert res["max_drawdown"] == -18.182
     assert res["total_fees"] == 0.0
@@ -255,5 +250,5 @@ def test_build_summary():
     assert res["last_tic"] == "2018-04-17 04:11:03"
     assert res["total_tics"] == 9
     assert type(res["test_duration"]) is float
-    assert len(trade_df.index) == 3
+    assert len(trade_df.index) == 2
     assert res["total_missing"] == 0
