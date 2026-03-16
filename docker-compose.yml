@@ -92,6 +92,8 @@ services:
       - lake_data:/data/lake
       - results_data:/data/results
       - ./fast_trade:/app/fast_trade   # live-reload during dev
+      - ./test:/app/test               # tests
+      - ./pyproject.toml:/app/pyproject.toml
     ports:
       - "8000:8000"
     depends_on:

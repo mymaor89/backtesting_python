@@ -53,7 +53,8 @@ RUN pip install --no-cache-dir --timeout 120 --retries 5 \
         yfinance \
         jupyterlab \
         finta \
-        mplfinance
+        mplfinance \
+        pytest
 
 # ── Layer 3: copy real application code ──────────────────────────────────────
 # Overwrites the stubs.  Rebuilt on every source change, but deps are cached.

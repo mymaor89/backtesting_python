@@ -236,14 +236,12 @@ def test_prepare_df():
         "freq": "1Min",
         "start": "",
         "stop": "",
-        "trailing_stop_loss": 0.1,
         "datapoints": [{"name": "ind_1", "args": [], "transformer": "ema"}],
     }
 
     res = prepare_df(mock_df, mock_backtest)
 
     assert "ind_1" in list(res.columns)
-    assert "trailing_stop_loss" in list(res.columns)
 
 
 def test_build_data_frame():
