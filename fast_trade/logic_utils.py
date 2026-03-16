@@ -52,11 +52,33 @@ def _single_condition(df: pd.DataFrame, logic) -> pd.Series:
     op = logic[1]
     left = df[logic[0]]
     right = df[logic[2]] if isinstance(logic[2], str) and logic[2] in df.columns else logic[2]
-    ops = {
-        ">": left > right, "<": left < right, "=": left == right,
-        "!=": left != right, ">=": left >= right, "<=": left <= right,
-    }
-    return ops.get(op, pd.Series(False, index=df.index))
+    
+    # Base condition mask
+    if op == ">":
+        mask = left > right
+    elif op == "<":
+        mask = left < right
+    elif op == "=":
+        mask = left == right
+    elif op == "!=":
+        mask = left != right
+    elif op == ">=":
+        mask = left >= right
+    elif op == "<=":
+        mask = left <= right
+    else:
+        mask = pd.Series(False, index=df.index)
+        
+    # Handle confirmation frames (logic[3])
+    # If frames > 1, the condition must be True for [frames] consecutive periods.
+    if len(logic) > 3:
+        frames = int(logic[3])
+        if frames > 1:
+            # We use rolling(window=frames).sum() == frames as .all() can be weird on booleans in some pandas versions
+            # sum() == frames ensures all 'frames' bars satisfy the condition.
+            mask = mask.rolling(window=frames).sum() == frames
+            
+    return mask
 
 
 def build_mask(df: pd.DataFrame, logic_list: List, combine_any: bool) -> pd.Series:

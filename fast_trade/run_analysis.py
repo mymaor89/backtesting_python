@@ -6,27 +6,38 @@ import pandas as pd
 ACTION_HOLD = 0
 ACTION_ENTER = 1
 ACTION_EXIT = 2
+ACTION_ENTER_SHORT = 3
+ACTION_EXIT_SHORT = 4
 
 
 def _encode_actions(actions: np.ndarray) -> np.ndarray:
     codes = np.zeros(len(actions), dtype=np.int8)
     enter_mask = (actions == "e") | (actions == "ae")
     exit_mask = (actions == "x") | (actions == "ax") | (actions == "tsl")
+    enter_short_mask = (actions == "es")
+    exit_short_mask = (actions == "xs")
+    
     codes[enter_mask] = ACTION_ENTER
     codes[exit_mask] = ACTION_EXIT
+    codes[enter_short_mask] = ACTION_ENTER_SHORT
+    codes[exit_short_mask] = ACTION_EXIT_SHORT
     return codes
 
 
 def _simulate_account_path(
     action_codes: np.ndarray,
-    close_prices: np.ndarray,
+    open_prices: np.ndarray,
     high_prices: np.ndarray,
+    low_prices: np.ndarray,
+    close_prices: np.ndarray,
     base_balance: float,
     comission: float,
     lot_size: float,
     max_lot_size: float,
     trailing_stop_loss: float = 0.0,
     stop_loss: float = 0.0,
+    slippage: float = 0.0,
+    execution_at: str = "close",
     progress_callback=None,
 ):
     n = len(action_codes)
@@ -37,56 +48,96 @@ def _simulate_account_path(
     final_actions = action_codes.copy()
 
     fee_rate = comission / 100 if comission else 0.0
+    slippage_rate = slippage / 100 if slippage else 0.0
     in_trade = False
+    position_type = 0  # 1 for Long, -1 for Short
     cash_value = base_balance
     aux_value = 0.0
     entry_price = 0.0
     high_water_mark = 0.0
+    low_water_mark = 0.0
     update_every = max(1, n // 200) if n else 1
 
     for i in range(n):
         close = close_prices[i]
+        curr_open = open_prices[i]
         high = high_prices[i]
+        low = low_prices[i]
+        
         fee = 0.0
         action_code = action_codes[i]
 
-        # Check stop losses while in a trade
+        # 1. Handle Exits (Stop Losses and Normal signals)
         if in_trade:
-            # Update high water mark with bar high
-            if high > high_water_mark:
-                high_water_mark = high
+            if position_type == 1:  # LONG
+                if high > high_water_mark:
+                    high_water_mark = high
+                if stop_loss and low <= entry_price * (1 - stop_loss):
+                    action_code = ACTION_EXIT
+                if trailing_stop_loss and low <= high_water_mark * (1 - trailing_stop_loss):
+                    action_code = ACTION_EXIT
+                
+                if action_code in [ACTION_EXIT, ACTION_EXIT_SHORT]: # Force exit on any exit signal
+                    final_actions[i] = ACTION_EXIT
+                    exit_price = (open_prices[i+1] if execution_at == "next_open" and i + 1 < n else close) * (1 - slippage_rate)
+                    base_value = round(aux_value * exit_price, 8)
+                    fee = round(base_value * fee_rate, 8)
+                    cash_value = round(cash_value + base_value - fee, 8)
+                    aux_value = 0.0
+                    in_trade = False
+                    position_type = 0
+            
+            elif position_type == -1: # SHORT
+                if low < low_water_mark:
+                    low_water_mark = low
+                if stop_loss and high >= entry_price * (1 + stop_loss):
+                    action_code = ACTION_EXIT_SHORT
+                if trailing_stop_loss and high >= low_water_mark * (1 + trailing_stop_loss):
+                    action_code = ACTION_EXIT_SHORT
 
-            # Fixed stop loss: exit if price drops below entry price by stop_loss %
-            if stop_loss and close <= entry_price * (1 - stop_loss):
-                action_code = ACTION_EXIT
-                final_actions[i] = ACTION_EXIT
+                if action_code in [ACTION_EXIT, ACTION_EXIT_SHORT]:
+                    final_actions[i] = ACTION_EXIT_SHORT
+                    exit_price = (open_prices[i+1] if execution_at == "next_open" and i + 1 < n else close) * (1 + slippage_rate)
+                    # For short, we buy back. Cash decreases.
+                    buyback_cost = round(abs(aux_value) * exit_price, 8)
+                    fee = round(buyback_cost * fee_rate, 8)
+                    cash_value = round(cash_value - buyback_cost - fee, 8)
+                    aux_value = 0.0
+                    in_trade = False
+                    position_type = 0
 
-            # Trailing stop: exit if price drops below high water mark by trailing_stop_loss %
-            if trailing_stop_loss and close <= high_water_mark * (1 - trailing_stop_loss):
-                action_code = ACTION_EXIT
-                final_actions[i] = ACTION_EXIT
-
-        if action_code == ACTION_ENTER and not in_trade:
-            base_transaction_amount = cash_value * lot_size
-            if max_lot_size and base_transaction_amount > max_lot_size:
-                base_transaction_amount = max_lot_size
-
-            aux_value = round(base_transaction_amount / close, 8) if base_transaction_amount else 0.0
-            fee = round(aux_value * fee_rate, 8) if fee_rate and aux_value else 0.0
-            aux_value = aux_value - fee
-            cash_value = round(cash_value - base_transaction_amount, 8)
-            in_trade = True
-            entry_price = close
-            high_water_mark = close
-
-        elif action_code == ACTION_EXIT and in_trade:
-            base_value = round(aux_value * close, 8) if aux_value else 0.0
-            fee = round(base_value * fee_rate, 8) if fee_rate and base_value else 0.0
-            cash_value = round(cash_value + base_value - fee, 8)
-            aux_value = 0.0
-            in_trade = False
-            entry_price = 0.0
-            high_water_mark = 0.0
+        # 2. Handle Entries
+        if not in_trade:
+            if action_code == ACTION_ENTER:
+                enter_price = (open_prices[i+1] if execution_at == "next_open" and i + 1 < n else close) * (1 + slippage_rate)
+                base_transaction_amount = cash_value * lot_size
+                if max_lot_size and base_transaction_amount > max_lot_size:
+                    base_transaction_amount = max_lot_size
+                
+                units = round(base_transaction_amount / enter_price, 8)
+                fee = round(units * enter_price * fee_rate, 8)
+                aux_value = units - (fee / enter_price) 
+                cash_value = round(cash_value - base_transaction_amount, 8)
+                in_trade = True
+                position_type = 1
+                entry_price = enter_price
+                high_water_mark = enter_price
+                
+            elif action_code == ACTION_ENTER_SHORT:
+                enter_price = (open_prices[i+1] if execution_at == "next_open" and i + 1 < n else close) * (1 - slippage_rate)
+                base_transaction_amount = cash_value * lot_size
+                if max_lot_size and base_transaction_amount > max_lot_size:
+                    base_transaction_amount = max_lot_size
+                
+                units = round(base_transaction_amount / enter_price, 8)
+                fee = round(units * enter_price * fee_rate, 8)
+                # For short, we gain cash, minus fee in cash
+                cash_value = round(cash_value + (units * enter_price) - fee, 8)
+                aux_value = -units
+                in_trade = True
+                position_type = -1
+                entry_price = enter_price
+                low_water_mark = enter_price
 
         account_value_array[i] = cash_value
         aux_array[i] = aux_value
@@ -143,22 +194,30 @@ def apply_logic_to_df(df: pd.DataFrame, backtest: dict, progress_callback=None):
         max_lot_size = backtest.get("max_lot_size")
         trailing_stop_loss = float(backtest.get("trailing_stop_loss", 0))
         stop_loss = float(backtest.get("stop_loss", 0))
+        slippage = float(backtest.get("slippage", 0))
+        execution_at = backtest.get("execution_at", "close")
 
-        # Get action and close price arrays
+        # Get action and prices arrays
         actions = df["action"].values
-        close_prices = df["close"].values
+        open_prices = df["open"].values
         high_prices = df["high"].values
+        low_prices = df["low"].values
+        close_prices = df["close"].values
         action_codes = _encode_actions(actions)
         sim = _simulate_account_path(
             action_codes=action_codes,
-            close_prices=close_prices,
+            open_prices=open_prices,
             high_prices=high_prices,
+            low_prices=low_prices,
+            close_prices=close_prices,
             base_balance=base_balance,
             comission=comission,
             lot_size=lot_size,
             max_lot_size=max_lot_size,
             trailing_stop_loss=trailing_stop_loss,
             stop_loss=stop_loss,
+            slippage=slippage,
+            execution_at=execution_at,
             progress_callback=progress_callback,
         )
         fee_rate = comission / 100 if comission else 0.0
@@ -171,7 +230,9 @@ def apply_logic_to_df(df: pd.DataFrame, backtest: dict, progress_callback=None):
         # Update action column to reflect stop-triggered exits
         final_actions = sim["final_actions"]
         action_labels = np.where(final_actions == ACTION_ENTER, "e",
-                        np.where(final_actions == ACTION_EXIT, "x", "h"))
+                        np.where(final_actions == ACTION_EXIT, "x",
+                        np.where(final_actions == ACTION_ENTER_SHORT, "es",
+                        np.where(final_actions == ACTION_EXIT_SHORT, "xs", "h"))))
         df["action"] = action_labels
 
         # Handle exit_on_end if needed

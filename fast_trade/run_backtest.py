@@ -213,6 +213,10 @@ def prepare_new_backtest(backtest):
     # new_backtest["any_exit"] = backtest.get("any_exit", [])
     new_backtest["lot_size_perc"] = float(backtest.get("lot_size", 1))
     new_backtest["max_lot_size"] = int(backtest.get("max_lot_size", 0))
+    new_backtest["slippage"] = float(backtest.get("slippage", 0.0))
+    new_backtest["execution_at"] = backtest.get("execution_at", "close")  # options: close, next_open
+    new_backtest["enter_short"] = backtest.get("enter_short", [])
+    new_backtest["exit_short"] = backtest.get("exit_short", [])
     new_backtest["rules"] = backtest.get("rules", [])
 
     # if chart_start and chart_stop are provided, use them
@@ -298,7 +302,19 @@ def process_logic_and_generate_actions(
     max_last = max_last_frames(backtest)
     compiled_logic = compile_action_logic(backtest)
 
-    # If we need to look at previous frames, we can't fully vectorize
+    # Optimized path: try vectorization first if possible, even if max_last > 0
+    # because logic_utils now supports vectorized confirmations.
+    try:
+        if can_vectorize_logic(df, backtest):
+            df["action"] = vectorized_actions(df, backtest)
+            if progress_callback:
+                progress_callback({"percent": 100})
+            return df
+    except Exception:
+        # If vectorization fails, we fall back to the slower loop-based processing
+        pass
+
+    # If we need to look at previous frames and vectorization isn't available, we use the loop
     if max_last:
         actions = []
         last_frames = deque(maxlen=max_last)
@@ -383,6 +399,8 @@ def compile_action_logic(backtest: dict) -> dict:
         "any_exit": compile_group(backtest.get("any_exit", [])),
         "enter": compile_group(backtest.get("enter", [])),
         "any_enter": compile_group(backtest.get("any_enter", [])),
+        "enter_short": compile_group(backtest.get("enter_short", [])),
+        "exit_short": compile_group(backtest.get("exit_short", [])),
     }
 
 
@@ -457,6 +475,9 @@ def determine_action_compiled(frame, compiled_logic: dict, last_frames=None):
     if _take_action_compiled(frame, compiled_logic.get("exit", []), last_frames):
         return "x"
 
+    if _take_action_compiled(frame, compiled_logic.get("exit_short", []), last_frames):
+        return "xs"
+
     if _take_action_compiled(
         frame,
         compiled_logic.get("any_exit", []),
@@ -467,6 +488,9 @@ def determine_action_compiled(frame, compiled_logic: dict, last_frames=None):
 
     if _take_action_compiled(frame, compiled_logic.get("enter", []), last_frames):
         return "e"
+
+    if _take_action_compiled(frame, compiled_logic.get("enter_short", []), last_frames):
+        return "es"
 
     if _take_action_compiled(
         frame,

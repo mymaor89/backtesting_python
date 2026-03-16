@@ -74,6 +74,8 @@ class TestFixedStopLoss:
 
         result = _simulate_account_path(
             action_codes=action_codes,
+            open_prices=close_prices,
+            low_prices=close_prices,
             close_prices=close_prices,
             high_prices=high_prices,
             base_balance=1000.0,
@@ -98,6 +100,8 @@ class TestFixedStopLoss:
 
         result = _simulate_account_path(
             action_codes=action_codes,
+            open_prices=close_prices,
+            low_prices=close_prices,
             close_prices=close_prices,
             high_prices=high_prices,
             base_balance=1000.0,
@@ -122,6 +126,8 @@ class TestFixedStopLoss:
 
         result = _simulate_account_path(
             action_codes=action_codes,
+            open_prices=close_prices,
+            low_prices=close_prices,
             close_prices=close_prices,
             high_prices=high_prices,
             base_balance=1000.0,
@@ -146,6 +152,8 @@ class TestFixedStopLoss:
 
         result = _simulate_account_path(
             action_codes=action_codes,
+            open_prices=close_prices,
+            low_prices=close_prices,
             close_prices=close_prices,
             high_prices=high_prices,
             base_balance=1000.0,
@@ -181,6 +189,8 @@ class TestTrailingStopLoss:
 
         result = _simulate_account_path(
             action_codes=action_codes,
+            open_prices=close_prices,
+            low_prices=close_prices,
             close_prices=close_prices,
             high_prices=high_prices,
             base_balance=1000.0,
@@ -206,6 +216,8 @@ class TestTrailingStopLoss:
 
         result = _simulate_account_path(
             action_codes=action_codes,
+            open_prices=close_prices,
+            low_prices=close_prices,
             close_prices=close_prices,
             high_prices=high_prices,
             base_balance=1000.0,
@@ -231,6 +243,8 @@ class TestTrailingStopLoss:
 
         result = _simulate_account_path(
             action_codes=action_codes,
+            open_prices=close_prices,
+            low_prices=close_prices,
             close_prices=close_prices,
             high_prices=high_prices,
             base_balance=1000.0,
@@ -261,6 +275,8 @@ class TestTrailingStopLoss:
 
         result = _simulate_account_path(
             action_codes=action_codes,
+            open_prices=close_prices,
+            low_prices=close_prices,
             close_prices=close_prices,
             high_prices=high_prices,
             base_balance=1000.0,
@@ -290,6 +306,8 @@ class TestCombinedStopLoss:
 
         result = _simulate_account_path(
             action_codes=action_codes,
+            open_prices=close_prices,
+            low_prices=close_prices,
             close_prices=close_prices,
             high_prices=high_prices,
             base_balance=1000.0,
@@ -314,6 +332,8 @@ class TestCombinedStopLoss:
 
         result = _simulate_account_path(
             action_codes=action_codes,
+            open_prices=close_prices,
+            low_prices=close_prices,
             close_prices=close_prices,
             high_prices=high_prices,
             base_balance=1000.0,
@@ -341,6 +361,8 @@ class TestAccountValueWithStopLoss:
 
         result = _simulate_account_path(
             action_codes=action_codes,
+            open_prices=close_prices,
+            low_prices=close_prices,
             close_prices=close_prices,
             high_prices=high_prices,
             base_balance=1000.0,
@@ -364,6 +386,8 @@ class TestAccountValueWithStopLoss:
 
         result = _simulate_account_path(
             action_codes=action_codes,
+            open_prices=close_prices,
+            low_prices=close_prices,
             close_prices=close_prices,
             high_prices=high_prices,
             base_balance=1000.0,
@@ -373,8 +397,8 @@ class TestAccountValueWithStopLoss:
             stop_loss=0.05,
         )
 
-        # Entry: buy 1000/100 = 10 units, fee = 10 * 0.01 = 0.1, net aux = 9.9
-        assert result["fee"][0] == 0.1
+        # Entry: buy 1000/100 = 10 units, fee = $10.0 (1% of 1000), net aux = 9.9
+        assert result["fee"][0] == 10.0
         # Exit at 90: sell 9.9 * 90 = 891, fee = 891 * 0.01 = 8.91
         assert result["final_actions"][1] == ACTION_EXIT
         assert result["fee"][1] == pytest.approx(8.91, rel=1e-6)
@@ -392,6 +416,8 @@ class TestAccountValueWithStopLoss:
 
         result = _simulate_account_path(
             action_codes=action_codes,
+            open_prices=close_prices,
+            low_prices=close_prices,
             close_prices=close_prices,
             high_prices=high_prices,
             base_balance=1000.0,
@@ -527,6 +553,8 @@ class TestStopLossEdgeCases:
 
         result = _simulate_account_path(
             action_codes=action_codes,
+            open_prices=close_prices,
+            low_prices=close_prices,
             close_prices=close_prices,
             high_prices=high_prices,
             base_balance=1000.0,
@@ -547,6 +575,8 @@ class TestStopLossEdgeCases:
 
         result = _simulate_account_path(
             action_codes=action_codes,
+            open_prices=close_prices,
+            low_prices=close_prices,
             close_prices=close_prices,
             high_prices=high_prices,
             base_balance=1000.0,
@@ -572,6 +602,8 @@ class TestStopLossEdgeCases:
 
         result = _simulate_account_path(
             action_codes=action_codes,
+            open_prices=close_prices,
+            low_prices=close_prices,
             close_prices=close_prices,
             high_prices=high_prices,
             base_balance=1000.0,
