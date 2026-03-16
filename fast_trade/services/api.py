@@ -27,6 +27,10 @@ from fast_trade.services.db import (
     save_backtest_run,
     save_trades,
     upsert_strategy,
+    list_presets,
+    create_preset,
+    update_preset,
+    delete_preset,
 )
 from fast_trade.services.serializers import backtest_response, summary_to_json
 from fast_trade.run_backtest import run_backtest
@@ -115,6 +119,14 @@ class RunSummaryResponse(BaseModel):
     data_hash: str
     status: str
     summary: Optional[dict] = None
+
+
+class PresetRequest(BaseModel):
+    name: str = Field(..., description="Preset display name")
+    tag: str = Field("", description="Short label (e.g. Trend, Scalp)")
+    category: str = Field("Custom", description="Category grouping")
+    description: str = Field("", description="Strategy description")
+    state: dict = Field(..., description="StrategyFormState object")
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -286,3 +298,42 @@ def get_run(run_id: str) -> dict:
         "status": row.status,
         "summary": summary_to_json(row.summary or {}),
     }
+
+
+# ── Presets CRUD ─────────────────────────────────────────────────────────────
+
+@app.get("/presets", tags=["presets"])
+def get_presets() -> list[dict]:
+    """List all user-saved presets."""
+    try:
+        return list_presets(_db())
+    except Exception:
+        return []
+
+
+@app.post("/presets", tags=["presets"], status_code=201)
+def create_preset_endpoint(req: PresetRequest) -> dict:
+    """Create a new preset."""
+    try:
+        return create_preset(_db(), req.name, req.tag, req.category, req.description, req.state)
+    except Exception as exc:
+        if "presets_name_idx" in str(exc) or "duplicate" in str(exc).lower():
+            raise HTTPException(status_code=409, detail=f"Preset named {req.name!r} already exists")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.put("/presets/{preset_id}", tags=["presets"])
+def update_preset_endpoint(preset_id: int, req: PresetRequest) -> dict:
+    """Update an existing preset."""
+    result = update_preset(_db(), preset_id, req.name, req.tag, req.category, req.description, req.state)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Preset {preset_id} not found")
+    return result
+
+
+@app.delete("/presets/{preset_id}", tags=["presets"])
+def delete_preset_endpoint(preset_id: int) -> dict:
+    """Delete a preset."""
+    if not delete_preset(_db(), preset_id):
+        raise HTTPException(status_code=404, detail=f"Preset {preset_id} not found")
+    return {"deleted": True}

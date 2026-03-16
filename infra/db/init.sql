@@ -101,6 +101,22 @@ CREATE TABLE IF NOT EXISTS portfolio_state (
 );
 
 -- ──────────────────────────────────────────────
+-- PRESETS: user-saved strategy presets
+-- ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS presets (
+    id          SERIAL PRIMARY KEY,
+    name        TEXT NOT NULL,
+    tag         TEXT NOT NULL DEFAULT '',
+    category    TEXT NOT NULL DEFAULT 'Custom',
+    description TEXT NOT NULL DEFAULT '',
+    state       JSONB NOT NULL,
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS presets_name_idx ON presets (name);
+
+-- ──────────────────────────────────────────────
 -- REGIME LABELS: output of HMM regime detection
 -- ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS regime_labels (

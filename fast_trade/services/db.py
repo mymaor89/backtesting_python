@@ -145,6 +145,90 @@ def save_backtest_run(
         )
 
 
+# ── Preset CRUD ──────────────────────────────────────────────────────────────
+
+def list_presets(engine: sa.Engine) -> list[dict]:
+    """Return all user-saved presets, ordered by updated_at desc."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT id, name, tag, category, description, state, created_at, updated_at FROM presets ORDER BY updated_at DESC")
+        ).fetchall()
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "tag": r.tag,
+            "category": r.category,
+            "description": r.description,
+            "state": r.state,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        }
+        for r in rows
+    ]
+
+
+def create_preset(engine: sa.Engine, name: str, tag: str, category: str, description: str, state: dict) -> dict:
+    """Insert a new preset and return it."""
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+                INSERT INTO presets (name, tag, category, description, state)
+                VALUES (:name, :tag, :category, :description, CAST(:state AS jsonb))
+                RETURNING id, created_at, updated_at
+            """),
+            {"name": name, "tag": tag, "category": category, "description": description, "state": json.dumps(state)},
+        ).fetchone()
+    return {
+        "id": row.id,
+        "name": name,
+        "tag": tag,
+        "category": category,
+        "description": description,
+        "state": state,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def update_preset(engine: sa.Engine, preset_id: int, name: str, tag: str, category: str, description: str, state: dict) -> Optional[dict]:
+    """Update an existing preset by id. Returns updated preset or None if not found."""
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+                UPDATE presets
+                SET name = :name, tag = :tag, category = :category,
+                    description = :description, state = CAST(:state AS jsonb),
+                    updated_at = NOW()
+                WHERE id = :id
+                RETURNING id, created_at, updated_at
+            """),
+            {"id": preset_id, "name": name, "tag": tag, "category": category, "description": description, "state": json.dumps(state)},
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "id": row.id,
+        "name": name,
+        "tag": tag,
+        "category": category,
+        "description": description,
+        "state": state,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def delete_preset(engine: sa.Engine, preset_id: int) -> bool:
+    """Delete a preset by id. Returns True if deleted."""
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("DELETE FROM presets WHERE id = :id"),
+            {"id": preset_id},
+        )
+    return result.rowcount > 0
+
+
 def save_trades(engine: sa.Engine, run_id: str, trade_log_df) -> None:
     """Bulk-insert a trade log DataFrame into the trades hypertable."""
     import pandas as pd
