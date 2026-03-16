@@ -27,6 +27,7 @@ export interface StrategyFormState {
   comission: number
   trailing_stop_loss: number
   stop_loss: number
+  leverage: number
   datapoints: Datapoint[]
   enter: RuleItem[]
   exit: RuleItem[]
@@ -116,6 +117,7 @@ export function formToStrategy(f: StrategyFormState): Record<string, unknown> {
   }
   if (f.trailing_stop_loss) result.trailing_stop_loss = f.trailing_stop_loss
   if (f.stop_loss) result.stop_loss = f.stop_loss
+  if (f.leverage) result.leverage = f.leverage
   return result
 }
 
@@ -142,6 +144,7 @@ export function strategyToForm(s: Record<string, unknown>): StrategyFormState {
     comission:          Number(s.comission ?? 0.001),
     trailing_stop_loss: Number(s.trailing_stop_loss ?? 0),
     stop_loss:          Number(s.stop_loss ?? 0),
+    leverage:           Number(s.leverage ?? 1),
     datapoints: ((s.datapoints as unknown[]) ?? []).map(dp => {
       const d = dp as Record<string, unknown>
       return {
@@ -195,6 +198,7 @@ export function validate(f: StrategyFormState): ValidationResult {
   if (f.comission < 0 || f.comission > 1) addField('comission', 'Commission must be between 0 and 1')
   if (f.trailing_stop_loss < 0 || f.trailing_stop_loss > 1) addField('trailing_stop_loss', 'Must be between 0 and 1')
   if (f.stop_loss < 0 || f.stop_loss > 1) addField('stop_loss', 'Must be between 0 and 1')
+  if (f.leverage < 1 || f.leverage > 100) addField('leverage', 'Leverage must be between 1 and 100')
 
   // Datapoints
   const names = new Set<string>()
@@ -274,7 +278,7 @@ export const PRESET_STRATEGIES: Preset[] = [
     state: {
       exchange: 'yfinance', symbol: 'SPY', freq: '1D',
       start: '2023-01-01', stop: '2025-12-31',
-      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0,
+      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0, leverage: 1,
       datapoints: [
         { name: 'sma_50',  transformer: 'sma', args: [50]  },
         { name: 'sma_200', transformer: 'sma', args: [200] },
@@ -291,7 +295,7 @@ export const PRESET_STRATEGIES: Preset[] = [
     state: {
       exchange: 'coinbase', symbol: 'BTC-USD', freq: '1h',
       start: '2026-01-01', stop: '2026-03-15',
-      base_balance: 5000, comission: 0.002, trailing_stop_loss: 0, stop_loss: 0,
+      base_balance: 5000, comission: 0.002, trailing_stop_loss: 0, stop_loss: 0, leverage: 1,
       datapoints: [
         { name: 'ema_20',  transformer: 'ema', args: [20]  },
         { name: 'sma_200', transformer: 'sma', args: [200] },
@@ -311,7 +315,7 @@ export const PRESET_STRATEGIES: Preset[] = [
     state: {
       exchange: 'coinbase', symbol: 'ETH-USD', freq: '4h',
       start: '2025-01-01', stop: '2025-12-31',
-      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0,
+      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0, leverage: 1,
       datapoints: [
         { name: 'ema_8',  transformer: 'ema', args: [8]  },
         { name: 'ema_21', transformer: 'ema', args: [21] },
@@ -334,7 +338,7 @@ export const PRESET_STRATEGIES: Preset[] = [
     state: {
       exchange: 'yfinance', symbol: 'AAPL', freq: '1h',
       start: '2025-01-01', stop: '2025-12-31',
-      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0,
+      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0, leverage: 1,
       datapoints: [
         { name: 'rsi',    transformer: 'rsi', args: [14]  },
         { name: 'sma_200', transformer: 'sma', args: [200] },
@@ -354,7 +358,7 @@ export const PRESET_STRATEGIES: Preset[] = [
     state: {
       exchange: 'coinbase', symbol: 'SOL-USD', freq: '1h',
       start: '2026-01-01', stop: '2026-03-15',
-      base_balance: 5000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0,
+      base_balance: 5000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0, leverage: 1,
       datapoints: [
         { name: 'bb',  transformer: 'bbands', args: [20, 2] },
         { name: 'rsi', transformer: 'rsi',    args: [14]   },
@@ -374,7 +378,7 @@ export const PRESET_STRATEGIES: Preset[] = [
     state: {
       exchange: 'yfinance', symbol: 'NVDA', freq: '1D',
       start: '2024-01-01', stop: '2025-12-31',
-      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0,
+      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0, leverage: 1,
       datapoints: [
         { name: 'pct_b',   transformer: 'percent_b', args: [20]  },
         { name: 'sma_100', transformer: 'sma',       args: [100] },
@@ -396,7 +400,7 @@ export const PRESET_STRATEGIES: Preset[] = [
     state: {
       exchange: 'coinbase', symbol: 'BTC-USD', freq: '4h',
       start: '2026-01-01', stop: '2026-03-15',
-      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0,
+      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0, leverage: 1,
       datapoints: [
         { name: 'macd', transformer: 'macd', args: [12, 26, 9] },
         { name: 'rsi',  transformer: 'rsi',  args: [14]        },
@@ -416,7 +420,7 @@ export const PRESET_STRATEGIES: Preset[] = [
     state: {
       exchange: 'yfinance', symbol: 'QQQ', freq: '1D',
       start: '2025-01-01', stop: '2025-12-31',
-      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0,
+      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0, leverage: 1,
       datapoints: [
         { name: 'roc_63', transformer: 'roc', args: [63] },
         { name: 'roc_21', transformer: 'roc', args: [21] },
@@ -438,7 +442,7 @@ export const PRESET_STRATEGIES: Preset[] = [
     state: {
       exchange: 'coinbase', symbol: 'ETH-USD', freq: '1h',
       start: '2025-01-01', stop: '2025-12-31',
-      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0,
+      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0, leverage: 1,
       datapoints: [
         { name: 'high_20', transformer: 'rolling_max', args: [20] },
         { name: 'low_10',  transformer: 'rolling_min', args: [10] },
@@ -455,7 +459,7 @@ export const PRESET_STRATEGIES: Preset[] = [
     state: {
       exchange: 'yfinance', symbol: 'TSLA', freq: '4h',
       start: '2025-06-01', stop: '2025-12-31',
-      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0,
+      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0, leverage: 1,
       datapoints: [
         { name: 'atr', transformer: 'atr', args: [14] },
         { name: 'sma', transformer: 'sma', args: [20] },
@@ -477,7 +481,7 @@ export const PRESET_STRATEGIES: Preset[] = [
     state: {
       exchange: 'coinbase', symbol: 'BTC-USD', freq: '5min',
       start: '2026-03-10', stop: '2026-03-15',
-      base_balance: 1000, comission: 0.0005, trailing_stop_loss: 0, stop_loss: 0,
+      base_balance: 1000, comission: 0.0005, trailing_stop_loss: 0, stop_loss: 0, leverage: 1,
       datapoints: [
         { name: 'ema_5',  transformer: 'ema', args: [5]  },
         { name: 'ema_13', transformer: 'ema', args: [13] },
@@ -494,7 +498,7 @@ export const PRESET_STRATEGIES: Preset[] = [
     state: {
       exchange: 'binanceus', symbol: 'ETHUSDT', freq: '15min',
       start: '2026-03-01', stop: '2026-03-15',
-      base_balance: 2000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0,
+      base_balance: 2000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0, leverage: 1,
       datapoints: [
         { name: 'stoch_k', transformer: 'stoch',  args: [14] },
         { name: 'stoch_d', transformer: 'stochd', args: [3]  },
@@ -516,7 +520,7 @@ export const PRESET_STRATEGIES: Preset[] = [
     state: {
       exchange: 'yfinance', symbol: 'NVDA', freq: '1D',
       start: '2024-01-01', stop: '2025-12-31',
-      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0,
+      base_balance: 10000, comission: 0.001, trailing_stop_loss: 0, stop_loss: 0, leverage: 1,
       datapoints: [
         { name: 'vortex', transformer: 'vortex', args: [14] },
         { name: 'atr',    transformer: 'atr',    args: [14] },
@@ -542,6 +546,7 @@ export const DEFAULT_FORM_STATE: StrategyFormState = {
   comission:    0.001,
   trailing_stop_loss: 0,
   stop_loss:    0,
+  leverage:     1,
   datapoints: [
     { name: 'rsi',      transformer: 'rsi', args: [14] },
     { name: 'fast_ema', transformer: 'ema', args: [10] },

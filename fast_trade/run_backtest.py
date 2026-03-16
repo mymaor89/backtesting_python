@@ -165,7 +165,7 @@ def run_backtest(
     validate_backtest_with_df(new_backtest, df)
 
     if summary:
-        summary, trade_log = build_summary(df, performance_start_time)
+        summary, trade_log = build_summary(df, performance_start_time, backtest=new_backtest)
     else:
         performance_stop_time = datetime.datetime.utcnow()
         summary = {
@@ -214,6 +214,7 @@ def prepare_new_backtest(backtest):
     new_backtest["lot_size_perc"] = float(backtest.get("lot_size", 1))
     new_backtest["max_lot_size"] = int(backtest.get("max_lot_size", 0))
     new_backtest["slippage"] = float(backtest.get("slippage", 0.0))
+    new_backtest["leverage"] = float(backtest.get("leverage", 1.0))
     new_backtest["execution_at"] = backtest.get("execution_at", "close")  # options: close, next_open
     new_backtest["enter_short"] = backtest.get("enter_short", [])
     new_backtest["exit_short"] = backtest.get("exit_short", [])
@@ -756,7 +757,7 @@ def run_backtest_chunked(
 
     # Generate summary if requested
     if summary:
-        summary, trade_log = build_summary(processed_df, performance_start_time)
+        summary, trade_log = build_summary(processed_df, performance_start_time, backtest=new_backtest)
     else:
         performance_stop_time = datetime.datetime.utcnow()
         summary = {

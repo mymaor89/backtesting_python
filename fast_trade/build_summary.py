@@ -44,7 +44,7 @@ __all__ = [
 ]
 
 
-def build_summary(df, performance_start_time):
+def build_summary(df, performance_start_time, backtest=None):
     equity_peak = round(df["account_value"].max(), 3)
     equity_final = round(df.iloc[-1]["adj_account_value"], 3)
     _rolling_max = df["adj_account_value"].expanding().max()
@@ -62,6 +62,7 @@ def build_summary(df, performance_start_time):
     total_enter = len(df[df.action == "e"]) + len(df[df.action == "ae"])
     total_exit = len(df[df.action == "x"]) + len(df[df.action == "ax"])
     total_hold = len(df[df.action == "h"])
+    total_liquidations = len(df[df.action == "l"])
 
     trade_log_df = create_trade_log(df)
     total_trades = len(trade_log_df.index)
@@ -168,6 +169,8 @@ def build_summary(df, performance_start_time):
         "num_of_enter_signals": total_enter,
         "num_of_exit_signals": total_exit,
         "num_of_hold_signals": total_hold,
+        "num_liquidations": total_liquidations,
+        "leverage": float(backtest.get("leverage", 1.0)) if backtest else 1.0,
         "win_rate": float(win_perc if not pd.isna(win_perc) else 0),
         "profit_factor": float(profit_factor if not pd.isna(profit_factor) else 0),
         "avg_trade_perc": float(mean_trade_perc if not pd.isna(mean_trade_perc) else 0),

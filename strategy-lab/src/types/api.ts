@@ -25,6 +25,8 @@ export interface Summary {
   buy_and_hold_perc?: number | null
   time_in_market?: number | null
   avg_trade_perc?: number | null
+  leverage?: number | null
+  num_liquidations?: number | null
   [key: string]: unknown
 }
 

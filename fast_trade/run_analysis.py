@@ -8,6 +8,7 @@ ACTION_ENTER = 1
 ACTION_EXIT = 2
 ACTION_ENTER_SHORT = 3
 ACTION_EXIT_SHORT = 4
+ACTION_LIQUIDATION = 5
 
 
 def _encode_actions(actions: np.ndarray) -> np.ndarray:
@@ -37,6 +38,7 @@ def _simulate_account_path(
     trailing_stop_loss: float = 0.0,
     stop_loss: float = 0.0,
     slippage: float = 0.0,
+    leverage: float = 1.0,
     execution_at: str = "close",
     progress_callback=None,
 ):
@@ -54,9 +56,14 @@ def _simulate_account_path(
     cash_value = base_balance
     aux_value = 0.0
     entry_price = 0.0
+    margin_used = 0.0
+    entry_equity = 0.0
+    loan = 0.0
     high_water_mark = 0.0
     low_water_mark = 0.0
     update_every = max(1, n // 200) if n else 1
+
+    loan_array = np.zeros(n)
 
     for i in range(n):
         close = close_prices[i]
@@ -69,6 +76,19 @@ def _simulate_account_path(
 
         # 1. Handle Exits (Stop Losses and Normal signals)
         if in_trade:
+            # worst case equity check for liquidation
+            worst_price = low if position_type == 1 else high
+            
+            # current_worst_equity calculation depends on position type
+            if position_type == 1:
+                current_worst_equity = cash_value + aux_value * worst_price - (loan if leverage > 1.0 else 0.0)
+            else:
+                current_worst_equity = cash_value + aux_value * worst_price
+
+            # Liquidation: loss >= 90% of margin
+            if current_worst_equity <= (entry_equity - 0.9 * margin_used):
+                action_code = ACTION_LIQUIDATION
+
             if position_type == 1:  # LONG
                 if high > high_water_mark:
                     high_water_mark = high
@@ -77,13 +97,22 @@ def _simulate_account_path(
                 if trailing_stop_loss and low <= high_water_mark * (1 - trailing_stop_loss):
                     action_code = ACTION_EXIT
                 
-                if action_code in [ACTION_EXIT, ACTION_EXIT_SHORT]: # Force exit on any exit signal
-                    final_actions[i] = ACTION_EXIT
-                    exit_price = (open_prices[i+1] if execution_at == "next_open" and i + 1 < n else close) * (1 - slippage_rate)
+                if action_code in [ACTION_EXIT, ACTION_EXIT_SHORT, ACTION_LIQUIDATION]:
+                    if action_code == ACTION_LIQUIDATION:
+                        final_actions[i] = ACTION_LIQUIDATION
+                        exit_price = worst_price # Liquidated at the bad price
+                    else:
+                        final_actions[i] = ACTION_EXIT
+                        exit_price = (open_prices[i+1] if execution_at == "next_open" and i + 1 < n else close) * (1 - slippage_rate)
+                    
                     base_value = round(aux_value * exit_price, 8)
                     fee = round(base_value * fee_rate, 8)
-                    cash_value = round(cash_value + base_value - fee, 8)
+                    # Exit: return margin + profit - fee. Loan is repaid.
+                    # We only repay loan if leverage > 1.0 to match legacy non-leveraged behavior for 1x
+                    repayment = loan if leverage > 1.0 else 0.0
+                    cash_value = round(cash_value + base_value - repayment - fee, 8)
                     aux_value = 0.0
+                    loan = 0.0
                     in_trade = False
                     position_type = 0
             
@@ -95,9 +124,14 @@ def _simulate_account_path(
                 if trailing_stop_loss and high >= low_water_mark * (1 + trailing_stop_loss):
                     action_code = ACTION_EXIT_SHORT
 
-                if action_code in [ACTION_EXIT, ACTION_EXIT_SHORT]:
-                    final_actions[i] = ACTION_EXIT_SHORT
-                    exit_price = (open_prices[i+1] if execution_at == "next_open" and i + 1 < n else close) * (1 + slippage_rate)
+                if action_code in [ACTION_EXIT, ACTION_EXIT_SHORT, ACTION_LIQUIDATION]:
+                    if action_code == ACTION_LIQUIDATION:
+                        final_actions[i] = ACTION_LIQUIDATION
+                        exit_price = worst_price
+                    else:
+                        final_actions[i] = ACTION_EXIT_SHORT
+                        exit_price = (open_prices[i+1] if execution_at == "next_open" and i + 1 < n else close) * (1 + slippage_rate)
+                    
                     # For short, we buy back. Cash decreases.
                     buyback_cost = round(abs(aux_value) * exit_price, 8)
                     fee = round(buyback_cost * fee_rate, 8)
@@ -110,14 +144,21 @@ def _simulate_account_path(
         if not in_trade:
             if action_code == ACTION_ENTER:
                 enter_price = (open_prices[i+1] if execution_at == "next_open" and i + 1 < n else close) * (1 + slippage_rate)
-                base_transaction_amount = cash_value * lot_size
-                if max_lot_size and base_transaction_amount > max_lot_size:
-                    base_transaction_amount = max_lot_size
+                margin_used = cash_value * lot_size
+                if max_lot_size and margin_used > max_lot_size:
+                    margin_used = max_lot_size
                 
-                units = round(base_transaction_amount / enter_price, 8)
+                units = round((margin_used * leverage) / enter_price, 8)
                 fee = round(units * enter_price * fee_rate, 8)
+                
+                entry_equity = cash_value + 0.0 # equity before entry
                 aux_value = units - (fee / enter_price) 
-                cash_value = round(cash_value - base_transaction_amount, 8)
+                
+                # To maintain backward compatibility and fix rounding issues:
+                # We subtract EXACTLY margin_used from cash, and track the 'loan' separately.
+                cash_value = round(cash_value - margin_used, 8)
+                loan = round((units * enter_price) - margin_used, 8)
+                
                 in_trade = True
                 position_type = 1
                 entry_price = enter_price
@@ -125,12 +166,14 @@ def _simulate_account_path(
                 
             elif action_code == ACTION_ENTER_SHORT:
                 enter_price = (open_prices[i+1] if execution_at == "next_open" and i + 1 < n else close) * (1 - slippage_rate)
-                base_transaction_amount = cash_value * lot_size
-                if max_lot_size and base_transaction_amount > max_lot_size:
-                    base_transaction_amount = max_lot_size
+                margin_used = cash_value * lot_size
+                if max_lot_size and margin_used > max_lot_size:
+                    margin_used = max_lot_size
                 
-                units = round(base_transaction_amount / enter_price, 8)
+                units = round((margin_used * leverage) / enter_price, 8)
                 fee = round(units * enter_price * fee_rate, 8)
+                
+                entry_equity = cash_value + 0.0
                 # For short, we gain cash, minus fee in cash
                 cash_value = round(cash_value + (units * enter_price) - fee, 8)
                 aux_value = -units
@@ -143,10 +186,11 @@ def _simulate_account_path(
         aux_array[i] = aux_value
         in_trade_array[i] = in_trade
         fee_array[i] = fee
+        loan_array[i] = loan if leverage > 1.0 else 0.0
         if progress_callback and (i % update_every == 0 or i == n - 1):
             progress_callback({"percent": int((i + 1) / n * 100)})
 
-    adj_account_value_array = account_value_array + np.round(aux_array * close_prices, 8)
+    adj_account_value_array = account_value_array + np.round(aux_array * close_prices, 8) - loan_array
     return {
         "in_trade": in_trade_array,
         "account_value": account_value_array,
@@ -218,6 +262,7 @@ def apply_logic_to_df(df: pd.DataFrame, backtest: dict, progress_callback=None):
             stop_loss=stop_loss,
             slippage=slippage,
             execution_at=execution_at,
+            leverage=backtest.get("leverage", 1.0),
             progress_callback=progress_callback,
         )
         fee_rate = comission / 100 if comission else 0.0
@@ -232,7 +277,8 @@ def apply_logic_to_df(df: pd.DataFrame, backtest: dict, progress_callback=None):
         action_labels = np.where(final_actions == ACTION_ENTER, "e",
                         np.where(final_actions == ACTION_EXIT, "x",
                         np.where(final_actions == ACTION_ENTER_SHORT, "es",
-                        np.where(final_actions == ACTION_EXIT_SHORT, "xs", "h"))))
+                        np.where(final_actions == ACTION_EXIT_SHORT, "xs",
+                        np.where(final_actions == ACTION_LIQUIDATION, "l", "h")))))
         df["action"] = action_labels
 
         # Handle exit_on_end if needed

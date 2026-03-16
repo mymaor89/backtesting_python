@@ -58,7 +58,7 @@ def calculate_effective_trades(df, trade_log_df):
     }
 
 
-_TRADE_ACTIONS = frozenset(['e', 'ae', 'x', 'ax', 'tsl'])
+_TRADE_ACTIONS = frozenset(['e', 'ae', 'x', 'ax', 'tsl', 'es', 'xs', 'l'])
 
 
 def create_trade_log(df):

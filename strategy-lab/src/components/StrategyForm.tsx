@@ -288,6 +288,26 @@ export function StrategyForm({ state, onChange }: Props) {
             />
             <FieldError msg={fieldErrors.trailing_stop_loss} />
           </div>
+          
+          {/* Leverage */}
+          <div>
+            <label className={cls.label}>Leverage (1–50x)</label>
+            <div className="flex items-center gap-3">
+              <input
+                type="range" min="1" max="50" step="1"
+                value={state.leverage}
+                onChange={e => set('leverage', Number(e.target.value))}
+                className="flex-1 accent-cyan-600 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+              />
+              <input
+                type="number" min="1" max="100"
+                value={state.leverage}
+                onChange={e => set('leverage', Number(e.target.value))}
+                className="w-16 bg-slate-800 border border-slate-700 text-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-cyan-600"
+              />
+            </div>
+            <FieldError msg={fieldErrors.leverage} />
+          </div>
 
         </div>
       </div>

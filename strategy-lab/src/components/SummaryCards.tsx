@@ -28,6 +28,8 @@ const METRICS: MetricConfig[] = [
   { label: 'Avg Trade', key: 'avg_trade_perc', format: v => fmt(v, 2, '%'), greenWhenPositive: true },
   { label: 'Total Fees', key: 'total_fees', format: v => v == null ? '—' : `$${v.toFixed(2)}` },
   { label: 'Fees %', key: 'total_fees_perc', format: v => fmt(v, 2, '%') },
+  { label: 'Leverage', key: 'leverage', format: v => fmt(v, 1, 'x') },
+  { label: 'Liquidations', key: 'num_liquidations', format: v => (v == null ? '—' : String(v)), greenWhenPositive: false },
 ]
 
 function valueColor(metric: MetricConfig, value: number | null | undefined): string {
