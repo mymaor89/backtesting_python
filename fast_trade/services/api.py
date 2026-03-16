@@ -98,6 +98,10 @@ class BacktestRequest(BaseModel):
         True,
         description="Return a cached result when a completed run with matching hashes exists.",
     )
+    username: Optional[str] = Field(
+        None,
+        description="The username that sent the API request for tracking on the leaderboard.",
+    )
 
 
 class OptimizeRequest(BaseModel):
@@ -207,9 +211,12 @@ def run_backtest_endpoint(req: BacktestRequest) -> dict:
         clean_summary = summary_to_json(summary)
         clean_strategy = summary_to_json(strategy)
         strategy_id = upsert_strategy(
-            engine, strategy.get("name", "unnamed"), clean_strategy
+            engine, strategy.get("name", "Unnamed"), clean_strategy
         )
-        save_backtest_run(engine, run_id, strategy_id, s_hash, d_hash, clean_summary, clean_strategy)
+        save_backtest_run(
+            engine, run_id, strategy_id, s_hash, d_hash, 
+            clean_summary, clean_strategy, username=req.username
+        )
         save_trades(engine, run_id, trade_log)
     except Exception as exc:
         logger.error(f"Failed to persist backtest {run_id}: {exc}", exc_info=True)
@@ -276,34 +283,15 @@ def get_run(run_id: str) -> dict:
     Returns the summary stored in TimescaleDB.
     (The full equity curve is not re-stored; re-run with use_cache=false to get it.)
     """
-    from sqlalchemy import text
-
+    from fast_trade.services.db import get_run as db_get_run
+    
     engine = _db()
-    with engine.connect() as conn:
-        row = conn.execute(
-            text("""
-                SELECT r.id, s.name AS strategy_name, r.strategy_hash, r.data_hash,
-                       r.started_at, r.finished_at, r.status, r.summary
-                FROM backtest_runs r
-                LEFT JOIN strategies s ON r.strategy_id = s.id
-                WHERE r.id = :run_id
-            """),
-            {"run_id": run_id},
-        ).fetchone()
+    row = db_get_run(engine, run_id)
 
     if not row:
         raise HTTPException(status_code=404, detail=f"Run {run_id!r} not found")
 
-    return {
-        "run_id": row.id,
-        "strategy_name": row.strategy_name,
-        "strategy_hash": row.strategy_hash,
-        "data_hash": row.data_hash,
-        "started_at": row.started_at.isoformat() if row.started_at else None,
-        "finished_at": row.finished_at.isoformat() if row.finished_at else None,
-        "status": row.status,
-        "summary": summary_to_json(row.summary or {}),
-    }
+    return row
 
 
 # ── Presets CRUD ─────────────────────────────────────────────────────────────

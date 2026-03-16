@@ -40,7 +40,9 @@ export function Leaderboard() {
             <tr>
               <th className={cls.th}>Rank</th>
               <th className={cls.th}>Strategy</th>
+              <th className={cls.th}>Ticker</th>
               <th className={cls.th}>Return</th>
+              <th className={cls.th}>B&H Return</th>
               <th className={cls.th}>Sharpe</th>
               <th className={cls.th}>Win Rate</th>
               <th className={cls.th}>Max DD</th>
@@ -50,7 +52,7 @@ export function Leaderboard() {
           <tbody>
             {entries.length === 0 && !loading && (
               <tr>
-                <td colSpan={8} className="px-6 py-12 text-center text-slate-500 italic">
+                <td colSpan={10} className="px-6 py-12 text-center text-slate-500 italic">
                   No backtest results found yet. Run some strategies to see them here!
                 </td>
               </tr>
@@ -61,14 +63,22 @@ export function Leaderboard() {
                 <td className={cls.td}>
                   <div className="flex flex-col">
                     <span className="font-bold text-slate-200">{e.strategy_name}</span>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="text-[10px] text-slate-400 font-bold">{e.symbol || 'N/A'}</span>
-                      <span className="text-[10px] text-slate-500 bg-slate-800/50 px-1 rounded border border-slate-800">{e.freq || 'N/A'}</span>
-                    </div>
+                    {e.username && (
+                      <span className="text-[10px] text-cyan-500/70 font-mono mt-0.5">@{e.username}</span>
+                    )}
+                  </div>
+                </td>
+                <td className={cls.td}>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-slate-400 font-bold">{e.symbol || 'N/A'}</span>
+                    <span className="text-[10px] text-slate-500 bg-slate-800/50 px-1 rounded border border-slate-800">{e.freq || 'N/A'}</span>
                   </div>
                 </td>
                 <td className={cls.td + " font-mono font-bold"}>
                   <Metric value={e.return_perc} format={v => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`} />
+                </td>
+                <td className={cls.td + " font-mono"}>
+                  <Metric value={e.buy_and_hold_perc} format={v => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`} />
                 </td>
                 <td className={cls.td + " font-mono"}>{e.sharpe_ratio.toFixed(2)}</td>
                 <td className={cls.td + " font-mono"}>{e.win_rate.toFixed(1)}%</td>

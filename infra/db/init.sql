@@ -60,7 +60,10 @@ CREATE TABLE IF NOT EXISTS backtest_runs (
     finished_at     TIMESTAMPTZ,
     status          TEXT DEFAULT 'pending',     -- pending, running, done, failed
     summary         JSONB,
-    params          JSONB                       -- any CLI mods / overrides
+    params          JSONB,                      -- any CLI mods / overrides
+    symbol          TEXT,
+    timeframe       TEXT,
+    username        TEXT
 );
 
 CREATE INDEX IF NOT EXISTS backtest_runs_strategy_idx ON backtest_runs (strategy_id);

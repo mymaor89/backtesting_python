@@ -12,6 +12,8 @@ export interface LeaderboardEntry {
   win_rate: number
   total_trades: number
   max_drawdown: number
+  buy_and_hold_perc: number
+  username: string | null
   finished_at: string
 }
 

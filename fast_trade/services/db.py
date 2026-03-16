@@ -90,6 +90,8 @@ def get_cached_backtest(
 
 def upsert_strategy(engine: sa.Engine, name: str, config: dict) -> Optional[int]:
     """Insert a strategy row (by name) and return its id."""
+    if not name or name.strip().lower() == "unnamed":
+        name = "Unnamed"
     with engine.begin() as conn:
         row = conn.execute(
             text("""
@@ -118,21 +120,30 @@ def save_backtest_run(
     data_hash: str,
     summary: dict,
     params: dict,
+    username: Optional[str] = None,
 ) -> None:
     """Persist a completed backtest run to TimescaleDB."""
+    symbol = params.get("symbol") or summary.get("symbol")
+    freq = params.get("freq") or params.get("chart_period") or summary.get("freq")
+    
     with engine.begin() as conn:
         conn.execute(
             text("""
                 INSERT INTO backtest_runs
                     (id, strategy_id, strategy_hash, data_hash,
-                     started_at, finished_at, status, summary, params)
+                     started_at, finished_at, status, summary, params,
+                     symbol, timeframe, username)
                 VALUES
                     (:id, :sid, :sh, :dh,
-                     NOW(), NOW(), 'done', CAST(:summary AS JSONB), CAST(:params AS JSONB))
+                     NOW(), NOW(), 'done', CAST(:summary AS JSONB), CAST(:params AS JSONB),
+                     :symbol, :timeframe, :username)
                 ON CONFLICT (id) DO UPDATE
                     SET finished_at = NOW(),
                         status      = 'done',
-                        summary     = CAST(:summary AS JSONB)
+                        summary     = CAST(:summary AS JSONB),
+                        symbol      = :symbol,
+                        timeframe   = :timeframe,
+                        username    = :username
             """),
             {
                 "id": run_id,
@@ -141,11 +152,44 @@ def save_backtest_run(
                 "dh": data_hash,
                 "summary": json.dumps(summary, default=str),
                 "params": json.dumps(params, default=str),
+                "symbol": symbol,
+                "timeframe": freq,
+                "username": username,
             },
         )
 
 
 # ── Preset CRUD ──────────────────────────────────────────────────────────────
+
+def get_run(engine: sa.Engine, run_id: str) -> Optional[dict]:
+    """Return a single backtest run by its ID."""
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("""
+                SELECT r.id, s.name AS strategy_name, r.strategy_hash, r.data_hash,
+                       r.started_at, r.finished_at, r.status, r.summary, r.params
+                FROM backtest_runs r
+                LEFT JOIN strategies s ON r.strategy_id = s.id
+                WHERE r.id = :run_id
+            """),
+            {"run_id": run_id},
+        ).fetchone()
+
+    if not row:
+        return None
+
+    return {
+        "run_id": row.id,
+        "strategy_name": row.strategy_name,
+        "strategy_hash": row.strategy_hash,
+        "data_hash": row.data_hash,
+        "started_at": row.started_at.isoformat() if row.started_at else None,
+        "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+        "status": row.status,
+        "summary": row.summary or {},
+        "params": row.params or {},
+    }
+
 
 def list_presets(engine: sa.Engine) -> list[dict]:
     """Return all user-saved presets, ordered by updated_at desc."""
@@ -175,16 +219,20 @@ def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
             text("""
                 SELECT 
                     r.id, s.name as strategy_name, r.strategy_hash, r.data_hash, 
-                    r.finished_at, r.params->>'symbol' as symbol, r.params->>'freq' as freq,
+                    r.finished_at, COALESCE(r.symbol, r.params->>'symbol') as symbol, 
+                    COALESCE(r.timeframe, r.params->>'freq') as freq,
+                    r.username,
                     (r.summary->>'return_perc')::float as return_perc,
                     (r.summary->>'sharpe_ratio')::float as sharpe_ratio,
                     (r.summary->>'win_rate')::float as win_rate,
                     (r.summary->>'total_trades')::int as total_trades,
+                    (r.summary->>'buy_and_hold_perc')::float as buy_and_hold_perc,
                     COALESCE((r.summary->'drawdown_metrics'->>'max_drawdown_pct')::float, (r.summary->>'max_drawdown')::float) as max_drawdown
                 FROM backtest_runs r
                 LEFT JOIN strategies s ON r.strategy_id = s.id
                 WHERE r.status = 'done' 
                   AND r.summary ? 'return_perc'
+                  AND COALESCE((r.summary->>'leverage')::float, 1.0) <= 1.0
                 ORDER BY (r.summary->>'return_perc')::float DESC
                 LIMIT :limit
             """),
@@ -197,10 +245,12 @@ def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
             "strategy_name": r.strategy_name or "Unnamed",
             "symbol": r.symbol,
             "freq": r.freq,
+            "username": r.username,
             "return_perc": round(r.return_perc, 2) if r.return_perc is not None else 0,
             "sharpe_ratio": round(r.sharpe_ratio, 3) if r.sharpe_ratio is not None else 0,
             "win_rate": round(r.win_rate, 2) if r.win_rate is not None else 0,
             "total_trades": r.total_trades or 0,
+            "buy_and_hold_perc": round(r.buy_and_hold_perc, 2) if r.buy_and_hold_perc is not None else 0,
             "max_drawdown": round(r.max_drawdown, 2) if r.max_drawdown is not None else 0,
             "finished_at": r.finished_at.isoformat() if r.finished_at else None,
         }
