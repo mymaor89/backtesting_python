@@ -37,6 +37,7 @@ def _simulate_account_path(
     max_lot_size: float,
     trailing_stop_loss: float = 0.0,
     stop_loss: float = 0.0,
+    take_profit: float = 0.0,
     slippage: float = 0.0,
     leverage: float = 1.0,
     execution_at: str = "close",
@@ -94,6 +95,8 @@ def _simulate_account_path(
                     high_water_mark = high
                 if stop_loss and low <= entry_price * (1 - stop_loss):
                     action_code = ACTION_EXIT
+                if take_profit and high >= entry_price * (1 + take_profit):
+                    action_code = ACTION_EXIT
                 if trailing_stop_loss and low <= high_water_mark * (1 - trailing_stop_loss):
                     action_code = ACTION_EXIT
                 
@@ -120,6 +123,8 @@ def _simulate_account_path(
                 if low < low_water_mark:
                     low_water_mark = low
                 if stop_loss and high >= entry_price * (1 + stop_loss):
+                    action_code = ACTION_EXIT_SHORT
+                if take_profit and low <= entry_price * (1 - take_profit):
                     action_code = ACTION_EXIT_SHORT
                 if trailing_stop_loss and high >= low_water_mark * (1 + trailing_stop_loss):
                     action_code = ACTION_EXIT_SHORT
@@ -157,7 +162,8 @@ def _simulate_account_path(
                 # To maintain backward compatibility and fix rounding issues:
                 # We subtract EXACTLY margin_used from cash, and track the 'loan' separately.
                 cash_value = round(cash_value - margin_used, 8)
-                loan = round((units * enter_price) - margin_used, 8)
+                position_value = (units * enter_price)
+                loan = round(position_value - margin_used, 8)
                 
                 in_trade = True
                 position_type = 1
@@ -238,6 +244,7 @@ def apply_logic_to_df(df: pd.DataFrame, backtest: dict, progress_callback=None):
         max_lot_size = backtest.get("max_lot_size")
         trailing_stop_loss = float(backtest.get("trailing_stop_loss", 0))
         stop_loss = float(backtest.get("stop_loss", 0))
+        take_profit = float(backtest.get("take_profit", 0))
         slippage = float(backtest.get("slippage", 0))
         execution_at = backtest.get("execution_at", "close")
 
@@ -260,6 +267,7 @@ def apply_logic_to_df(df: pd.DataFrame, backtest: dict, progress_callback=None):
             max_lot_size=max_lot_size,
             trailing_stop_loss=trailing_stop_loss,
             stop_loss=stop_loss,
+            take_profit=take_profit,
             slippage=slippage,
             execution_at=execution_at,
             leverage=backtest.get("leverage", 1.0),

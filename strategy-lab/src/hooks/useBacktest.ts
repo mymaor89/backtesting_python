@@ -15,7 +15,7 @@ export function useBacktest() {
       const res = await fetch(`${API_BASE}/backtest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ strategy, use_cache: true }),
+        body: JSON.stringify({ strategy, use_cache: false }),
       })
       if (!res.ok) {
         const text = await res.text()

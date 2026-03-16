@@ -57,6 +57,9 @@ _ACTION_LABELS: dict[str, str] = {
     "x":   "Exit",
     "ax":  "Exit",
     "tsl": "Exit (TSL)",
+    "es":  "Enter Short",
+    "xs":  "Exit Short",
+    "l":   "Liquidation",
     "h":   "Hold",
 }
 

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   EXCHANGES, EXCHANGE_SYMBOLS, FREQS, OPERATORS, OHLC_COLUMNS,
   TRANSFORMER_GROUPS, defaultArgs,
@@ -44,6 +45,7 @@ interface Props {
 
 export function StrategyForm({ state, onChange }: Props) {
   const { fieldErrors } = validate(state)
+
   const applyPreset = (preset: string) => {
     const end = new Date()
     const stop = end.toLocaleDateString('en-CA')
@@ -263,31 +265,62 @@ export function StrategyForm({ state, onChange }: Props) {
             <FieldError msg={fieldErrors.comission} />
           </div>
 
-          {/* Stop Loss */}
-          <div>
-            <label className={cls.label}>Stop Loss % (e.g. 0.05 = 5%)</label>
-            <input
-              type="number" min="0" max="1" step="0.01"
-              value={state.stop_loss}
-              onChange={e => set('stop_loss', Number(e.target.value))}
-              className={fieldCls(!!fieldErrors.stop_loss)}
-              placeholder="0"
-            />
-            <FieldError msg={fieldErrors.stop_loss} />
+          <div className="lg:col-span-2">
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <input
+                type="checkbox"
+                className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-cyan-600 focus:ring-cyan-600 focus:ring-offset-slate-900"
+                checked={state.risk_enabled}
+                onChange={e => set('risk_enabled', e.target.checked)}
+              />
+              <span className="text-xs font-semibold text-slate-400 group-hover:text-slate-200 transition-colors uppercase tracking-wider">
+                Enable Risk Management (SL / TP)
+              </span>
+            </label>
           </div>
 
-          {/* Trailing Stop Loss */}
-          <div>
-            <label className={cls.label}>Trailing Stop % (e.g. 0.05 = 5%)</label>
-            <input
-              type="number" min="0" max="1" step="0.01"
-              value={state.trailing_stop_loss}
-              onChange={e => set('trailing_stop_loss', Number(e.target.value))}
-              className={fieldCls(!!fieldErrors.trailing_stop_loss)}
-              placeholder="0"
-            />
-            <FieldError msg={fieldErrors.trailing_stop_loss} />
-          </div>
+          {state.risk_enabled && (
+            <>
+              {/* Stop Loss */}
+              <div>
+                <label className={cls.label}>Stop Loss %</label>
+                <input
+                  type="number" min="0" max="100" step="1"
+                  value={state.stop_loss}
+                  onChange={e => set('stop_loss', Number(e.target.value))}
+                  className={fieldCls(!!fieldErrors.stop_loss)}
+                  placeholder="0"
+                />
+                <FieldError msg={fieldErrors.stop_loss} />
+              </div>
+
+              {/* Take Profit */}
+              <div>
+                <label className={cls.label}>Take Profit %</label>
+                <input
+                  type="number" min="0" max="1000" step="1"
+                  value={state.take_profit}
+                  onChange={e => set('take_profit', Number(e.target.value))}
+                  className={fieldCls(!!fieldErrors.take_profit)}
+                  placeholder="0"
+                />
+                <FieldError msg={fieldErrors.take_profit} />
+              </div>
+
+              {/* Trailing Stop Loss */}
+              <div>
+                <label className={cls.label}>Trailing Stop %</label>
+                <input
+                  type="number" min="0" max="100" step="1"
+                  value={state.trailing_stop_loss}
+                  onChange={e => set('trailing_stop_loss', Number(e.target.value))}
+                  className={fieldCls(!!fieldErrors.trailing_stop_loss)}
+                  placeholder="0"
+                />
+                <FieldError msg={fieldErrors.trailing_stop_loss} />
+              </div>
+            </>
+          )}
           
           {/* Leverage */}
           <div>

@@ -209,6 +209,7 @@ def prepare_new_backtest(backtest):
     new_backtest["comission"] = backtest.get("comission", 0)
     new_backtest["trailing_stop_loss"] = float(backtest.get("trailing_stop_loss", 0))
     new_backtest["stop_loss"] = float(backtest.get("stop_loss", 0))
+    new_backtest["take_profit"] = float(backtest.get("take_profit", 0))
     # new_backtest["any_enter"] = backtest.get("any_enter", [])
     # new_backtest["any_exit"] = backtest.get("any_exit", [])
     new_backtest["lot_size_perc"] = float(backtest.get("lot_size", 1))
