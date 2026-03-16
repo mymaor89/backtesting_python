@@ -81,6 +81,8 @@ def build_summary(df, performance_start_time):
     ) = summarize_trade_perc(trade_log_df)
 
     total_fees = round(df.fee.sum(), 3)
+    base_balance = df.iloc[0]["adj_account_value"]
+    total_fees_perc = round(total_fees / base_balance * 100, 3) if base_balance else 0.0
     win_trades = trade_log_df[trade_log_df.adj_account_value_change_perc > 0]
     loss_trades = trade_log_df[trade_log_df.adj_account_value_change_perc < 0]
 
@@ -156,6 +158,7 @@ def build_summary(df, performance_start_time):
         "equity_final": float(equity_final if not pd.isna(equity_final) else 0),
         "max_drawdown": float(max_drawdown if not pd.isna(max_drawdown) else 0),
         "total_fees": float(total_fees if not pd.isna(total_fees) else 0),
+        "total_fees_perc": float(total_fees_perc if not pd.isna(total_fees_perc) else 0),
         "first_tic": start_date.strftime("%Y-%m-%d %H:%M:%S"),
         "last_tic": end_date.strftime("%Y-%m-%d %H:%M:%S"),
         "total_tics": len(df.index),

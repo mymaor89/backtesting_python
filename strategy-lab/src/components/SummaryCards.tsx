@@ -26,6 +26,8 @@ const METRICS: MetricConfig[] = [
   { label: 'Buy & Hold', key: 'buy_and_hold_perc', format: v => fmt(v, 2, '%'), greenWhenPositive: true },
   { label: 'Time in Market', key: 'time_in_market', format: v => fmt(v, 1, '%') },
   { label: 'Avg Trade', key: 'avg_trade_perc', format: v => fmt(v, 2, '%'), greenWhenPositive: true },
+  { label: 'Total Fees', key: 'total_fees', format: v => v == null ? '—' : `$${v.toFixed(2)}` },
+  { label: 'Fees %', key: 'total_fees_perc', format: v => fmt(v, 2, '%') },
 ]
 
 function valueColor(metric: MetricConfig, value: number | null | undefined): string {
