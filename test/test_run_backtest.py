@@ -485,8 +485,11 @@ def test_determine_action_3_any_exit():
 
 
 def test_determine_action_1_trailing_stop_loss():
+    """TSL is now handled in the simulation phase, not in action determination.
+    With TSL removed from determine_action, this should return 'h' since
+    neither exit nor enter conditions are met (close < short for both)."""
     MockFrame = namedtuple(
-        "MockFrame", "date close open high low volume short trailing_stop_loss"
+        "MockFrame", "date close open high low volume short"
     )
     mock_frame = MockFrame(
         date=1523937963,
@@ -496,7 +499,6 @@ def test_determine_action_1_trailing_stop_loss():
         low=0.01,
         volume=36898,
         short=0.0312,
-        trailing_stop_loss=10,
     )
 
     mock_backtest = {
@@ -504,12 +506,11 @@ def test_determine_action_1_trailing_stop_loss():
         "any_exit": [["close", ">", "short"]],
         "enter": [],
         "any_enter": [],
-        "trailing_stop_loss": 0.0213,
     }
 
     res = determine_action(mock_frame, mock_backtest, last_frames=[mock_frame])
 
-    assert res == "tsl"
+    assert res == "h"
 
 
 def test_determine_action_enter_1_mult():
