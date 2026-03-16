@@ -519,6 +519,110 @@ export const PRESET_STRATEGIES: Preset[] = [
     },
   },
 
+  // ── Intraday ─────────────────────────────────────────────────────────────────
+  {
+    name: 'VWAP Reclaim (BTC)',
+    tag: 'Intraday',
+    category: 'Intraday',
+    description: 'Buy when price reclaims VWAP with RSI momentum confirmation. Quick exit on VWAP rejection.',
+    state: {
+      exchange: 'coinbase', symbol: 'BTC-USD', freq: '5min',
+      start: '2026-03-10', stop: '2026-03-16',
+      base_balance: 5000, comission: 0.001, risk_enabled: true, trailing_stop_loss: 0, stop_loss: 1, take_profit: 2, leverage: 1,
+      datapoints: [
+        { name: 'vwap', transformer: 'vwap', args: [] },
+        { name: 'rsi',  transformer: 'rsi',  args: [9] },
+      ],
+      enter: [
+        { left: 'close', op: '>', right: 'vwap' },
+        { left: 'rsi',   op: '>', right: '55'   },
+      ],
+      exit: [{ left: 'close', op: '<', right: 'vwap' }],
+    },
+  },
+  {
+    name: 'EMA Ribbon Scalp (ETH)',
+    tag: 'Intraday',
+    category: 'Intraday',
+    description: 'Fast EMA ribbon (5/8/13) alignment on 1min. Enter when all aligned bullish, exit on first cross.',
+    state: {
+      exchange: 'coinbase', symbol: 'ETH-USD', freq: '1min',
+      start: '2026-03-14', stop: '2026-03-16',
+      base_balance: 2000, comission: 0.001, risk_enabled: true, trailing_stop_loss: 0.5, stop_loss: 0.5, take_profit: 1, leverage: 1,
+      datapoints: [
+        { name: 'ema_5',  transformer: 'ema', args: [5]  },
+        { name: 'ema_8',  transformer: 'ema', args: [8]  },
+        { name: 'ema_13', transformer: 'ema', args: [13] },
+      ],
+      enter: [
+        { left: 'ema_5', op: '>', right: 'ema_8'  },
+        { left: 'ema_8', op: '>', right: 'ema_13' },
+      ],
+      exit: [{ left: 'ema_5', op: '<', right: 'ema_8' }],
+    },
+  },
+  {
+    name: 'RSI Mean Reversion 15m (SOL)',
+    tag: 'Intraday',
+    category: 'Intraday',
+    description: 'Intraday mean reversion on SOL: buy oversold RSI dips above EMA-50 support. Take profit at RSI 65.',
+    state: {
+      exchange: 'coinbase', symbol: 'SOL-USD', freq: '15min',
+      start: '2026-03-01', stop: '2026-03-16',
+      base_balance: 3000, comission: 0.001, risk_enabled: true, trailing_stop_loss: 0, stop_loss: 2, take_profit: 3, leverage: 1,
+      datapoints: [
+        { name: 'rsi',    transformer: 'rsi', args: [7]  },
+        { name: 'ema_50', transformer: 'ema', args: [50] },
+      ],
+      enter: [
+        { left: 'rsi',   op: '<', right: '25'     },
+        { left: 'close', op: '>', right: 'ema_50' },
+      ],
+      exit: [{ left: 'rsi', op: '>', right: '65' }],
+    },
+  },
+  {
+    name: 'Momentum Burst (QQQ)',
+    tag: 'Intraday',
+    category: 'Intraday',
+    description: 'Intraday momentum on QQQ 5min: enter when ROC spikes positive with MACD confirmation. Exit on momentum fade.',
+    state: {
+      exchange: 'yfinance', symbol: 'QQQ', freq: '5min',
+      start: '2026-03-10', stop: '2026-03-16',
+      base_balance: 10000, comission: 0.0005, risk_enabled: true, trailing_stop_loss: 0, stop_loss: 0.5, take_profit: 1.5, leverage: 1,
+      datapoints: [
+        { name: 'roc_10', transformer: 'roc',  args: [10]       },
+        { name: 'macd',   transformer: 'macd', args: [12, 26, 9] },
+      ],
+      enter: [
+        { left: 'roc_10', op: '>', right: '0.1' },
+        { left: 'macd',   op: '>', right: '0'   },
+      ],
+      exit: [{ left: 'roc_10', op: '<', right: '-0.05' }],
+    },
+  },
+  {
+    name: 'DOGE Volatility Scalp',
+    tag: 'Intraday',
+    category: 'Intraday',
+    description: 'Exploit DOGE volatility on 5min: enter when CCI crosses above -100 (oversold bounce). Exit at +100.',
+    state: {
+      exchange: 'coinbase', symbol: 'DOGE-USD', freq: '5min',
+      start: '2026-03-10', stop: '2026-03-16',
+      base_balance: 1000, comission: 0.001, risk_enabled: true, trailing_stop_loss: 1, stop_loss: 2, take_profit: 3, leverage: 1,
+      datapoints: [
+        { name: 'cci',    transformer: 'cci', args: [14] },
+        { name: 'ema_20', transformer: 'ema', args: [20] },
+      ],
+      enter: [
+        { left: 'cci',   op: '>',  right: '-100'  },
+        { left: 'cci',   op: '<',  right: '0'     },
+        { left: 'close', op: '>=', right: 'ema_20' },
+      ],
+      exit: [{ left: 'cci', op: '>', right: '100' }],
+    },
+  },
+
   // ── Advanced ───────────────────────────────────────────────────────────────
   {
     name: 'Vortex Trend Hunter',
