@@ -107,16 +107,11 @@ def vectorized_actions(df: pd.DataFrame, backtest: dict) -> pd.Series:
     enter_mask = build_mask(df, backtest.get("enter", []), combine_any=False)
     any_enter_mask = build_mask(df, backtest.get("any_enter", []), combine_any=True)
 
-    tsl_mask = pd.Series(False, index=df.index)
-    if backtest.get("trailing_stop_loss"):
-        tsl_mask = df["close"] <= df["trailing_stop_loss"]
-
-    df_actions.loc[tsl_mask] = "tsl"
-    df_actions.loc[~tsl_mask & exit_mask] = "x"
-    df_actions.loc[~tsl_mask & ~exit_mask & any_exit_mask] = "ax"
-    df_actions.loc[~tsl_mask & ~exit_mask & ~any_exit_mask & enter_mask] = "e"
+    df_actions.loc[exit_mask] = "x"
+    df_actions.loc[~exit_mask & any_exit_mask] = "ax"
+    df_actions.loc[~exit_mask & ~any_exit_mask & enter_mask] = "e"
     df_actions.loc[
-        ~tsl_mask & ~exit_mask & ~any_exit_mask & ~enter_mask & any_enter_mask
+        ~exit_mask & ~any_exit_mask & ~enter_mask & any_enter_mask
     ] = "ae"
 
     return df_actions

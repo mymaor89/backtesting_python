@@ -99,12 +99,6 @@ def prepare_df(df: pd.DataFrame, backtest: dict):
     # Drop gaps (weekends etc) after trimming.
     df = df.dropna(subset=["close"])
 
-    trailing_stop_loss = backtest.get("trailing_stop_loss", 0)
-    if trailing_stop_loss:
-        df["trailing_stop_loss"] = df["close"].cummax() * (
-            1 - float(trailing_stop_loss)
-        )
-
     return df
 
 

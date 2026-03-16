@@ -207,7 +207,8 @@ def prepare_new_backtest(backtest):
     new_backtest["base_balance"] = backtest.get("base_balance", 1000)
     new_backtest["exit_on_end"] = backtest.get("exit_on_end", False)
     new_backtest["comission"] = backtest.get("comission", 0)
-    new_backtest["trailing_stop_loss"] = backtest.get("trailing_stop_loss", 0)
+    new_backtest["trailing_stop_loss"] = float(backtest.get("trailing_stop_loss", 0))
+    new_backtest["stop_loss"] = float(backtest.get("stop_loss", 0))
     # new_backtest["any_enter"] = backtest.get("any_enter", [])
     # new_backtest["any_exit"] = backtest.get("any_exit", [])
     new_backtest["lot_size_perc"] = float(backtest.get("lot_size", 1))
@@ -378,7 +379,6 @@ def compile_action_logic(backtest: dict) -> dict:
         return result
 
     return {
-        "trailing_stop_loss": bool(backtest.get("trailing_stop_loss")),
         "exit": compile_group(backtest.get("exit", [])),
         "any_exit": compile_group(backtest.get("any_exit", [])),
         "enter": compile_group(backtest.get("enter", [])),
@@ -453,10 +453,6 @@ def _take_action_compiled(current_frame, compiled_logics, last_frames=None, requ
 def determine_action_compiled(frame, compiled_logic: dict, last_frames=None):
     if last_frames is None:
         last_frames = []
-
-    if compiled_logic.get("trailing_stop_loss"):
-        if frame.close <= frame.trailing_stop_loss:
-            return "tsl"
 
     if _take_action_compiled(frame, compiled_logic.get("exit", []), last_frames):
         return "x"

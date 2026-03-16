@@ -20,10 +20,13 @@ def _encode_actions(actions: np.ndarray) -> np.ndarray:
 def _simulate_account_path(
     action_codes: np.ndarray,
     close_prices: np.ndarray,
+    high_prices: np.ndarray,
     base_balance: float,
     comission: float,
     lot_size: float,
     max_lot_size: float,
+    trailing_stop_loss: float = 0.0,
+    stop_loss: float = 0.0,
     progress_callback=None,
 ):
     n = len(action_codes)
@@ -31,17 +34,37 @@ def _simulate_account_path(
     account_value_array = np.zeros(n, dtype=float)
     aux_array = np.zeros(n, dtype=float)
     fee_array = np.zeros(n, dtype=float)
+    final_actions = action_codes.copy()
 
     fee_rate = comission / 100 if comission else 0.0
     in_trade = False
     cash_value = base_balance
     aux_value = 0.0
+    entry_price = 0.0
+    high_water_mark = 0.0
     update_every = max(1, n // 200) if n else 1
 
     for i in range(n):
         close = close_prices[i]
+        high = high_prices[i]
         fee = 0.0
         action_code = action_codes[i]
+
+        # Check stop losses while in a trade
+        if in_trade:
+            # Update high water mark with bar high
+            if high > high_water_mark:
+                high_water_mark = high
+
+            # Fixed stop loss: exit if price drops below entry price by stop_loss %
+            if stop_loss and close <= entry_price * (1 - stop_loss):
+                action_code = ACTION_EXIT
+                final_actions[i] = ACTION_EXIT
+
+            # Trailing stop: exit if price drops below high water mark by trailing_stop_loss %
+            if trailing_stop_loss and close <= high_water_mark * (1 - trailing_stop_loss):
+                action_code = ACTION_EXIT
+                final_actions[i] = ACTION_EXIT
 
         if action_code == ACTION_ENTER and not in_trade:
             base_transaction_amount = cash_value * lot_size
@@ -53,6 +76,8 @@ def _simulate_account_path(
             aux_value = aux_value - fee
             cash_value = round(cash_value - base_transaction_amount, 8)
             in_trade = True
+            entry_price = close
+            high_water_mark = close
 
         elif action_code == ACTION_EXIT and in_trade:
             base_value = round(aux_value * close, 8) if aux_value else 0.0
@@ -60,6 +85,8 @@ def _simulate_account_path(
             cash_value = round(cash_value + base_value - fee, 8)
             aux_value = 0.0
             in_trade = False
+            entry_price = 0.0
+            high_water_mark = 0.0
 
         account_value_array[i] = cash_value
         aux_array[i] = aux_value
@@ -75,6 +102,7 @@ def _simulate_account_path(
         "aux": aux_array,
         "fee": fee_array,
         "adj_account_value": adj_account_value_array,
+        "final_actions": final_actions,
     }
 
 
@@ -113,18 +141,24 @@ def apply_logic_to_df(df: pd.DataFrame, backtest: dict, progress_callback=None):
         comission = float(backtest.get("comission"))
         lot_size = backtest.get("lot_size_perc")
         max_lot_size = backtest.get("max_lot_size")
+        trailing_stop_loss = float(backtest.get("trailing_stop_loss", 0))
+        stop_loss = float(backtest.get("stop_loss", 0))
 
         # Get action and close price arrays
         actions = df["action"].values
         close_prices = df["close"].values
+        high_prices = df["high"].values
         action_codes = _encode_actions(actions)
         sim = _simulate_account_path(
             action_codes=action_codes,
             close_prices=close_prices,
+            high_prices=high_prices,
             base_balance=base_balance,
             comission=comission,
             lot_size=lot_size,
             max_lot_size=max_lot_size,
+            trailing_stop_loss=trailing_stop_loss,
+            stop_loss=stop_loss,
             progress_callback=progress_callback,
         )
         fee_rate = comission / 100 if comission else 0.0
@@ -133,6 +167,12 @@ def apply_logic_to_df(df: pd.DataFrame, backtest: dict, progress_callback=None):
         aux_array = sim["aux"]
         fee_array = sim["fee"]
         adj_account_value_array = sim["adj_account_value"]
+
+        # Update action column to reflect stop-triggered exits
+        final_actions = sim["final_actions"]
+        action_labels = np.where(final_actions == ACTION_ENTER, "e",
+                        np.where(final_actions == ACTION_EXIT, "x", "h"))
+        df["action"] = action_labels
 
         # Handle exit_on_end if needed
         if backtest.get("exit_on_end") and in_trade_array[-1]:
@@ -173,10 +213,14 @@ def apply_logic_to_df(df: pd.DataFrame, backtest: dict, progress_callback=None):
         comission = float(backtest.get("comission"))
         lot_size = backtest.get("lot_size_perc")
         max_lot_size = backtest.get("max_lot_size")
+        fb_trailing_stop_loss = float(backtest.get("trailing_stop_loss", 0))
+        fb_stop_loss = float(backtest.get("stop_loss", 0))
 
         new_account_value = account_value
 
         aux = 0.0
+        entry_price = 0.0
+        high_water_mark = 0.0
         aux_list = []
         account_value_list = []
         in_trade_list = []
@@ -187,8 +231,18 @@ def apply_logic_to_df(df: pd.DataFrame, backtest: dict, progress_callback=None):
         update_every = max(1, total_rows // 200)
         for idx, row in enumerate(df.itertuples()):
             close = row.close
+            high = row.high
             curr_action = row.action
             fee = 0.0
+
+            # Check stop losses while in a trade
+            if in_trade:
+                if high > high_water_mark:
+                    high_water_mark = high
+                if fb_stop_loss and close <= entry_price * (1 - fb_stop_loss):
+                    curr_action = "x"
+                if fb_trailing_stop_loss and close <= high_water_mark * (1 - fb_trailing_stop_loss):
+                    curr_action = "x"
 
             if curr_action in ["e", "ae"] and not in_trade:
                 # this means we should enter the trade
@@ -200,6 +254,8 @@ def apply_logic_to_df(df: pd.DataFrame, backtest: dict, progress_callback=None):
                     close,
                     comission,
                 )
+                entry_price = close
+                high_water_mark = close
 
             if curr_action in ["x", "ax", "tsl"] and in_trade:
                 # this means we should exit the trade
@@ -207,6 +263,8 @@ def apply_logic_to_df(df: pd.DataFrame, backtest: dict, progress_callback=None):
                 [in_trade, aux, new_account_value, fee] = exit_position(
                     account_value_list, close, aux, comission
                 )
+                entry_price = 0.0
+                high_water_mark = 0.0
 
             adj_account_value = new_account_value + convert_aux_to_base(aux, close)
 

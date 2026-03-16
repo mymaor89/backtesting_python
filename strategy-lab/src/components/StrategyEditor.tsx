@@ -28,7 +28,7 @@ function savedToPreset(s: SavedPreset): Preset & { savedId: number } {
 }
 
 export function StrategyEditor({ onRun, loading }: Props) {
-  const [mode, setMode]           = useState<Mode>('json')
+  const [mode, setMode]           = useState<Mode>('form')
   const [json, setJson]           = useState(DEFAULT_JSON)
   const [formState, setFormState] = useState<StrategyFormState>(DEFAULT_FORM_STATE)
   const [switchError, setSwitchError] = useState<string | null>(null)

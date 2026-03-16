@@ -263,6 +263,32 @@ export function StrategyForm({ state, onChange }: Props) {
             <FieldError msg={fieldErrors.comission} />
           </div>
 
+          {/* Stop Loss */}
+          <div>
+            <label className={cls.label}>Stop Loss % (e.g. 0.05 = 5%)</label>
+            <input
+              type="number" min="0" max="1" step="0.01"
+              value={state.stop_loss}
+              onChange={e => set('stop_loss', Number(e.target.value))}
+              className={fieldCls(!!fieldErrors.stop_loss)}
+              placeholder="0"
+            />
+            <FieldError msg={fieldErrors.stop_loss} />
+          </div>
+
+          {/* Trailing Stop Loss */}
+          <div>
+            <label className={cls.label}>Trailing Stop % (e.g. 0.05 = 5%)</label>
+            <input
+              type="number" min="0" max="1" step="0.01"
+              value={state.trailing_stop_loss}
+              onChange={e => set('trailing_stop_loss', Number(e.target.value))}
+              className={fieldCls(!!fieldErrors.trailing_stop_loss)}
+              placeholder="0"
+            />
+            <FieldError msg={fieldErrors.trailing_stop_loss} />
+          </div>
+
         </div>
       </div>
 
