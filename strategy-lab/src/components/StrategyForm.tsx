@@ -17,6 +17,8 @@ const cls = {
   section:'text-xs text-slate-500 uppercase tracking-wider font-semibold mb-3',
   addBtn: 'text-xs text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1',
   delBtn: 'text-slate-600 hover:text-red-400 transition-colors text-lg leading-none px-1',
+  tooltipTrigger: 'inline-flex items-center justify-center w-3.5 h-3.5 ml-1.5 rounded-full bg-slate-700 text-slate-400 text-[10px] cursor-help hover:bg-cyan-900/50 hover:text-cyan-400 transition-all font-bold italic',
+  tooltipContent: 'absolute z-50 invisible group-hover:visible bg-slate-900 border border-slate-700 text-slate-300 text-[10px] p-2 rounded shadow-2xl w-48 -left-2 top-6 leading-relaxed pointer-events-none'
 }
 
 function fieldCls(hasError: boolean) {
@@ -32,6 +34,15 @@ function FieldError({ msg }: { msg?: string }) {
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return <p className={cls.section}>{children}</p>
+}
+
+function Tooltip({ text }: { text: string }) {
+  return (
+    <span className="relative group inline-block">
+      <span className={cls.tooltipTrigger}>i</span>
+      <span className={cls.tooltipContent}>{text}</span>
+    </span>
+  )
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -152,7 +163,7 @@ export function StrategyForm({ state, onChange }: Props) {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="p-4 space-y-6 overflow-y-auto max-h-[85vh]">
+    <div className="p-2 sm:p-4 space-y-6 overflow-y-auto max-h-[85vh]">
 
       {/* ── Configuration ───────────────────────────────────────────────── */}
       <div>
@@ -161,7 +172,10 @@ export function StrategyForm({ state, onChange }: Props) {
 
           {/* Exchange */}
           <div>
-            <label className={cls.label}>Exchange</label>
+            <label className={cls.label}>
+              Exchange
+              <Tooltip text="The source of historical market data. yfinance is for stocks/ETFs, others for Crypto." />
+            </label>
             <select
               value={state.exchange}
               onChange={e => onExchangeChange(e.target.value)}
@@ -174,7 +188,10 @@ export function StrategyForm({ state, onChange }: Props) {
 
           {/* Symbol */}
           <div>
-            <label className={cls.label}>Symbol</label>
+            <label className={cls.label}>
+              Symbol
+              <Tooltip text="The asset ticker. Use dash for Coinbase (BTC-USD) and no dash for Binance (BTCUSDT)." />
+            </label>
             <input
               list="symbol-suggestions"
               value={state.symbol}
@@ -190,7 +207,10 @@ export function StrategyForm({ state, onChange }: Props) {
 
           {/* Frequency */}
           <div>
-            <label className={cls.label}>Frequency</label>
+            <label className={cls.label}>
+              Frequency
+              <Tooltip text="The interval of each candle. Lower timeframes provide more noise, higher provide more signal." />
+            </label>
             <select
               value={state.freq}
               onChange={e => set('freq', e.target.value)}
@@ -202,7 +222,10 @@ export function StrategyForm({ state, onChange }: Props) {
 
           {/* Base balance */}
           <div>
-            <label className={cls.label}>Base Balance ($)</label>
+            <label className={cls.label}>
+              Base Balance ($)
+              <Tooltip text="Your starting theoretical capital in USD for this backtest." />
+            </label>
             <input
               type="number" min="1" step="100"
               value={state.base_balance}
@@ -214,7 +237,10 @@ export function StrategyForm({ state, onChange }: Props) {
 
           {/* Presets */}
           <div className="col-span-2 flex items-center gap-2 -mb-1">
-            <span className={cls.label + " mb-0"}>Date Presets:</span>
+            <span className={cls.label + " mb-0"}>
+              Date Presets:
+              <Tooltip text="Quickly select common historical timeframes." />
+            </span>
             <div className="flex flex-wrap gap-1.5">
               {['1mo', '3mo', '6mo', '1y', 'Ytd', '2y', '5y'].map(p => (
                 <button
@@ -231,7 +257,10 @@ export function StrategyForm({ state, onChange }: Props) {
 
           {/* Start */}
           <div>
-            <label className={cls.label}>Start Date</label>
+            <label className={cls.label}>
+              Start Date
+              <Tooltip text="When to begin the historical simulation." />
+            </label>
             <input
               type="date"
               value={state.start}
@@ -243,7 +272,10 @@ export function StrategyForm({ state, onChange }: Props) {
 
           {/* Stop */}
           <div>
-            <label className={cls.label}>Stop Date</label>
+            <label className={cls.label}>
+              Stop Date
+              <Tooltip text="When to end the historical simulation." />
+            </label>
             <input
               type="date"
               value={state.stop}
@@ -255,7 +287,10 @@ export function StrategyForm({ state, onChange }: Props) {
 
           {/* Commission */}
           <div className="col-span-2 sm:col-span-1">
-            <label className={cls.label}>Commission (0–1, e.g. 0.001 = 0.1%)</label>
+            <label className={cls.label}>
+              Commission (0–1, e.g. 0.001 = 0.1%)
+              <Tooltip text="Fee paid to the exchange for every executed buy and sell order." />
+            </label>
             <input
               type="number" min="0" max="1" step="0.0001"
               value={state.comission}
@@ -276,6 +311,7 @@ export function StrategyForm({ state, onChange }: Props) {
               <span className="text-xs font-semibold text-slate-400 group-hover:text-slate-200 transition-colors uppercase tracking-wider">
                 Enable Risk Management (SL / TP)
               </span>
+              <Tooltip text="Safeguard your account with automated exit strategies based on percentage loss or gain." />
             </label>
           </div>
 
@@ -283,7 +319,10 @@ export function StrategyForm({ state, onChange }: Props) {
             <>
               {/* Stop Loss */}
               <div>
-                <label className={cls.label}>Stop Loss %</label>
+                <label className={cls.label}>
+                  Stop Loss %
+                  <Tooltip text="Close position if price drops this % below entry to prevent further losses." />
+                </label>
                 <input
                   type="number" min="0" max="100" step="1"
                   value={state.stop_loss}
@@ -296,7 +335,10 @@ export function StrategyForm({ state, onChange }: Props) {
 
               {/* Take Profit */}
               <div>
-                <label className={cls.label}>Take Profit %</label>
+                <label className={cls.label}>
+                  Take Profit %
+                  <Tooltip text="Close position once profit reaches this % to lock in gains." />
+                </label>
                 <input
                   type="number" min="0" max="1000" step="1"
                   value={state.take_profit}
@@ -309,7 +351,10 @@ export function StrategyForm({ state, onChange }: Props) {
 
               {/* Trailing Stop Loss */}
               <div>
-                <label className={cls.label}>Trailing Stop %</label>
+                <label className={cls.label}>
+                  Trailing Stop %
+                  <Tooltip text="A floating stop loss that follows price upwards but never moves down. Great for trend following." />
+                </label>
                 <input
                   type="number" min="0" max="100" step="1"
                   value={state.trailing_stop_loss}
@@ -324,7 +369,10 @@ export function StrategyForm({ state, onChange }: Props) {
           
           {/* Leverage */}
           <div>
-            <label className={cls.label}>Leverage (1–50x)</label>
+            <label className={cls.label}>
+              Leverage (1–100x)
+              <Tooltip text="Magnifies position size by borrowing funds. Higher leverage increases profit potential but raises liquidation risk." />
+            </label>
             <div className="flex items-center gap-3">
               <input
                 type="range" min="1" max="50" step="1"
@@ -356,7 +404,10 @@ export function StrategyForm({ state, onChange }: Props) {
 
                 {/* Name */}
                 <div className="flex-1 min-w-0">
-                  <label className={cls.label}>Name</label>
+                  <label className={cls.label}>
+                    Name
+                    <Tooltip text="Unique identifier for this indicator to use in your rules." />
+                  </label>
                   <input
                     value={dp.name}
                     onChange={e => updateDp(i, { name: e.target.value.replace(/\s/g, '_') })}
@@ -368,7 +419,10 @@ export function StrategyForm({ state, onChange }: Props) {
 
                 {/* Transformer */}
                 <div className="flex-1 min-w-0">
-                  <label className={cls.label}>Transformer</label>
+                  <label className={cls.label}>
+                    Transformer
+                    <Tooltip text="The technical analysis formula used to process price data (e.g. RSI, EMA, BBands)." />
+                  </label>
                   <select
                     value={dp.transformer}
                     onChange={e => onTransformerChange(i, e.target.value)}
@@ -438,6 +492,7 @@ export function StrategyForm({ state, onChange }: Props) {
           <SectionHeader>
             {side === 'enter' ? '▶ Enter Rules' : '◀ Exit Rules'}
             <span className="normal-case font-normal text-slate-600 ml-1">(all must be true)</span>
+            <Tooltip text={side === 'enter' ? "Conditions that trigger buying a long position or opening a short." : "Conditions that trigger selling a long or closing a short."} />
           </SectionHeader>
 
           <div className="space-y-2">

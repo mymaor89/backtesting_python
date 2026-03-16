@@ -192,178 +192,180 @@ export function StrategyEditor({ onRun, loading }: Props) {
     <div className="bg-slate-900 rounded-xl border border-slate-800 flex flex-col relative">
 
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 shrink-0">
-        <div className="flex items-center gap-4">
-          <div className="flex gap-1">
-            {(['json', 'form'] as Mode[]).map(m => (
+      <div className="px-3 sm:px-4 py-3 border-b border-slate-800 shrink-0 space-y-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+            <div className="flex gap-1">
+              {(['json', 'form'] as Mode[]).map(m => (
+                <button
+                  key={m}
+                  onClick={() => handleModeClick(m)}
+                  className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                    mode === m
+                      ? 'bg-slate-700 text-slate-100'
+                      : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  {m === 'json' ? '{ } JSON' : '\u229E Form'}
+                </button>
+              ))}
+            </div>
+
+            <div className="relative">
               <button
-                key={m}
-                onClick={() => handleModeClick(m)}
-                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                  mode === m
-                    ? 'bg-slate-700 text-slate-100'
-                    : 'text-slate-500 hover:text-slate-300'
+                onClick={() => setShowPresets(!showPresets)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium border transition-colors ${
+                  showPresets
+                    ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'
+                    : 'text-slate-400 border-slate-700 hover:border-slate-600 hover:text-slate-200'
                 }`}
               >
-                {m === 'json' ? '{ } JSON' : '\u229E Form'}
+                <span>Presets</span>
+                <span className={`text-[10px] transition-transform ${showPresets ? 'rotate-180' : ''}`}>{'\u25BC'}</span>
               </button>
-            ))}
-          </div>
 
-          <div className="relative">
-            <button
-              onClick={() => setShowPresets(!showPresets)}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium border transition-colors ${
-                showPresets
-                  ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'
-                  : 'text-slate-400 border-slate-700 hover:border-slate-600 hover:text-slate-200'
-              }`}
-            >
-              <span>Presets</span>
-              <span className={`text-[10px] transition-transform ${showPresets ? 'rotate-180' : ''}`}>{'\u25BC'}</span>
-            </button>
-
-            {showPresets && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowPresets(false)} />
-                <div className="absolute left-0 mt-2 w-[520px] bg-slate-800 border border-slate-700 rounded-lg shadow-2xl z-20 overflow-hidden max-h-[500px] flex flex-col">
-                  {/* Preset panel content */}
-                  <div className="flex flex-1 overflow-hidden">
-                    {/* Left Sidebar: Categories */}
-                    <div className="w-1/3 bg-slate-900/50 border-r border-slate-700 p-2 space-y-1 overflow-y-auto">
-                      <p className="px-2 py-1 text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">Categories</p>
-                      {categories.map(cat => (
-                        <div key={cat} className="group">
-                          <p className="px-2 py-1.5 text-xs text-slate-400 font-medium">{cat}</p>
-                          <div className="pl-2 space-y-0.5 mt-0.5">
-                            {allPresets.filter(p => p.category === cat).map(p => (
-                              <button
-                                key={p.savedId ? `db-${p.savedId}` : `builtin-${p.name}`}
-                                onClick={() => applyPreset(p)}
-                                className="w-full text-left px-2 py-1 rounded text-[11px] text-slate-500 hover:text-cyan-400 hover:bg-slate-700/50 transition-colors truncate"
-                              >
-                                {p.savedId != null && <span className="text-emerald-500 mr-1">*</span>}
-                                {p.name}
-                              </button>
-                            ))}
+              {showPresets && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowPresets(false)} />
+                  <div className="fixed inset-x-2 top-24 bottom-24 sm:absolute sm:inset-auto sm:left-0 sm:top-auto sm:mt-2 sm:w-[520px] sm:max-h-[500px] bg-slate-800 border border-slate-700 rounded-lg shadow-2xl z-20 overflow-hidden flex flex-col">
+                    {/* Preset panel content */}
+                    <div className="flex flex-1 overflow-hidden">
+                      {/* Left Sidebar: Categories (hidden on mobile) */}
+                      <div className="hidden sm:block w-1/3 bg-slate-900/50 border-r border-slate-700 p-2 space-y-1 overflow-y-auto">
+                        <p className="px-2 py-1 text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">Categories</p>
+                        {categories.map(cat => (
+                          <div key={cat} className="group">
+                            <p className="px-2 py-1.5 text-xs text-slate-400 font-medium">{cat}</p>
+                            <div className="pl-2 space-y-0.5 mt-0.5">
+                              {allPresets.filter(p => p.category === cat).map(p => (
+                                <button
+                                  key={p.savedId ? `db-${p.savedId}` : `builtin-${p.name}`}
+                                  onClick={() => applyPreset(p)}
+                                  className="w-full text-left px-2 py-1 rounded text-[11px] text-slate-500 hover:text-cyan-400 hover:bg-slate-700/50 transition-colors truncate"
+                                >
+                                  {p.savedId != null && <span className="text-emerald-500 mr-1">*</span>}
+                                  {p.name}
+                                </button>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+
+                      {/* Right: Detailed List */}
+                      <div className="flex-1 p-3 overflow-y-auto space-y-4">
+                        {categories.map(cat => (
+                          <div key={cat} className="space-y-2">
+                            <h4 className="text-[10px] uppercase tracking-widest text-cyan-500 font-bold px-1 border-b border-cyan-500/20 pb-1">{cat}</h4>
+                            <div className="grid grid-cols-1 gap-2">
+                              {allPresets.filter(p => p.category === cat).map(p => (
+                                <button
+                                  key={p.savedId ? `db-${p.savedId}` : `builtin-${p.name}`}
+                                  onClick={() => applyPreset(p)}
+                                  className="group text-left p-2.5 rounded-lg border border-slate-700 hover:border-cyan-500/50 hover:bg-slate-700/30 transition-all relative"
+                                >
+                                  <div className="flex items-center justify-between mb-1">
+                                    <div className="flex items-center gap-1.5">
+                                      {p.savedId != null && <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-900/40 text-emerald-400 font-mono leading-none">saved</span>}
+                                      <span className="text-xs font-bold text-slate-200 group-hover:text-cyan-400 tracking-tight transition-colors">{p.name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-900 text-slate-500 font-mono leading-none group-hover:text-slate-300 transition-colors">{p.tag}</span>
+                                      {p.savedId != null && (
+                                        <>
+                                          <span
+                                            onClick={(e) => {
+                                              const sp = savedPresets.find(s => s.id === p.savedId)
+                                              if (sp) openEditPreset(sp as SavedPreset & { savedId?: number }, e)
+                                            }}
+                                            className="text-[10px] text-slate-600 hover:text-cyan-400 cursor-pointer px-1"
+                                            title="Edit preset"
+                                          >edit</span>
+                                          <span
+                                            onClick={(e) => handleDelete(p.savedId!, e)}
+                                            className="text-[10px] text-slate-600 hover:text-red-400 cursor-pointer px-1"
+                                            title="Delete preset"
+                                          >del</span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 leading-normal line-clamp-2 italic">{p.description}</p>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
-                    {/* Right: Detailed List */}
-                    <div className="flex-1 p-3 overflow-y-auto space-y-4">
-                      {categories.map(cat => (
-                        <div key={cat} className="space-y-2">
-                          <h4 className="text-[10px] uppercase tracking-widest text-cyan-500 font-bold px-1 border-b border-cyan-500/20 pb-1">{cat}</h4>
-                          <div className="grid grid-cols-1 gap-2">
-                            {allPresets.filter(p => p.category === cat).map(p => (
-                              <button
-                                key={p.savedId ? `db-${p.savedId}` : `builtin-${p.name}`}
-                                onClick={() => applyPreset(p)}
-                                className="group text-left p-2.5 rounded-lg border border-slate-700 hover:border-cyan-500/50 hover:bg-slate-700/30 transition-all relative"
-                              >
-                                <div className="flex items-center justify-between mb-1">
-                                  <div className="flex items-center gap-1.5">
-                                    {p.savedId != null && <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-900/40 text-emerald-400 font-mono leading-none">saved</span>}
-                                    <span className="text-xs font-bold text-slate-200 group-hover:text-cyan-400 tracking-tight transition-colors">{p.name}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-900 text-slate-500 font-mono leading-none group-hover:text-slate-300 transition-colors">{p.tag}</span>
-                                    {p.savedId != null && (
-                                      <>
-                                        <span
-                                          onClick={(e) => {
-                                            const sp = savedPresets.find(s => s.id === p.savedId)
-                                            if (sp) openEditPreset(sp as SavedPreset & { savedId?: number }, e)
-                                          }}
-                                          className="text-[10px] text-slate-600 hover:text-cyan-400 cursor-pointer px-1"
-                                          title="Edit preset"
-                                        >edit</span>
-                                        <span
-                                          onClick={(e) => handleDelete(p.savedId!, e)}
-                                          className="text-[10px] text-slate-600 hover:text-red-400 cursor-pointer px-1"
-                                          title="Delete preset"
-                                        >del</span>
-                                      </>
-                                    )}
-                                  </div>
-                                </div>
-                                <p className="text-[10px] text-slate-500 leading-normal line-clamp-2 italic">{p.description}</p>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
+                    {/* Bottom bar */}
+                    <div className="border-t border-slate-700 px-3 py-2 flex items-center justify-between bg-slate-900/30">
+                      <span className="text-[10px] text-slate-600">
+                        {savedPresets.length} saved / {PRESET_STRATEGIES.length} built-in
+                      </span>
+                      <button
+                        onClick={() => { setShowPresets(false); openSaveNew() }}
+                        className="text-xs text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
+                      >
+                        + Save Current as Preset
+                      </button>
                     </div>
                   </div>
+                </>
+              )}
+            </div>
 
-                  {/* Bottom bar */}
-                  <div className="border-t border-slate-700 px-3 py-2 flex items-center justify-between bg-slate-900/30">
-                    <span className="text-[10px] text-slate-600">
-                      {savedPresets.length} saved / {PRESET_STRATEGIES.length} built-in
-                    </span>
-                    <button
-                      onClick={() => { setShowPresets(false); openSaveNew() }}
-                      className="text-xs text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
-                    >
-                      + Save Current as Preset
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Save button in header */}
-          <div className="relative">
-            {activePreset ? (
-              <>
+            {/* Save button in header */}
+            <div className="relative">
+              {activePreset ? (
+                <>
+                  <button
+                    onClick={() => setShowSaveMenu(!showSaveMenu)}
+                    className="px-3 py-1 rounded text-xs font-medium text-slate-400 border border-slate-700 hover:border-emerald-600 hover:text-emerald-400 transition-colors flex items-center gap-1.5"
+                  >
+                    <span>Save</span>
+                    <span className={`text-[10px] transition-transform ${showSaveMenu ? 'rotate-180' : ''}`}>{'\u25BC'}</span>
+                  </button>
+                  {showSaveMenu && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowSaveMenu(false)} />
+                      <div className="absolute left-0 mt-1 w-[200px] bg-slate-800 border border-slate-700 rounded-lg shadow-2xl z-20 overflow-hidden">
+                        <button
+                          onClick={handleSaveToExisting}
+                          className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-700 hover:text-emerald-400 transition-colors"
+                        >
+                          Save to "{activePreset.name}"
+                        </button>
+                        <button
+                          onClick={openSaveNew}
+                          className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-700 hover:text-cyan-400 transition-colors border-t border-slate-700"
+                        >
+                          Save as New Preset
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
                 <button
-                  onClick={() => setShowSaveMenu(!showSaveMenu)}
-                  className="px-3 py-1 rounded text-xs font-medium text-slate-400 border border-slate-700 hover:border-emerald-600 hover:text-emerald-400 transition-colors flex items-center gap-1.5"
+                  onClick={openSaveNew}
+                  className="px-3 py-1 rounded text-xs font-medium text-slate-400 border border-slate-700 hover:border-emerald-600 hover:text-emerald-400 transition-colors"
                 >
-                  <span>Save Preset</span>
-                  <span className={`text-[10px] transition-transform ${showSaveMenu ? 'rotate-180' : ''}`}>{'\u25BC'}</span>
+                  Save
                 </button>
-                {showSaveMenu && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setShowSaveMenu(false)} />
-                    <div className="absolute left-0 mt-1 w-[200px] bg-slate-800 border border-slate-700 rounded-lg shadow-2xl z-20 overflow-hidden">
-                      <button
-                        onClick={handleSaveToExisting}
-                        className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-700 hover:text-emerald-400 transition-colors"
-                      >
-                        Save to "{activePreset.name}"
-                      </button>
-                      <button
-                        onClick={openSaveNew}
-                        className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-700 hover:text-cyan-400 transition-colors border-t border-slate-700"
-                      >
-                        Save as New Preset
-                      </button>
-                    </div>
-                  </>
-                )}
-              </>
-            ) : (
-              <button
-                onClick={openSaveNew}
-                className="px-3 py-1 rounded text-xs font-medium text-slate-400 border border-slate-700 hover:border-emerald-600 hover:text-emerald-400 transition-colors"
-              >
-                Save Preset
-              </button>
-            )}
+              )}
+            </div>
           </div>
-        </div>
 
-        <button
-          onClick={handleRun}
-          disabled={loading || (mode === 'form' && formErrors.length > 0)}
-          className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-medium transition-colors text-white"
-        >
-          {loading ? 'Running\u2026' : '\u25B6 Run Backtest'}
-        </button>
+          <button
+            onClick={handleRun}
+            disabled={loading || (mode === 'form' && formErrors.length > 0)}
+            className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-medium transition-colors text-white shrink-0"
+          >
+            {loading ? 'Running\u2026' : '\u25B6 Run'}
+          </button>
+        </div>
       </div>
 
       {/* Content */}
@@ -394,7 +396,7 @@ export function StrategyEditor({ onRun, loading }: Props) {
       {showSaveModal && (
         <>
           <div className="fixed inset-0 bg-black/50 z-30" onClick={() => setShowSaveModal(false)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 w-[420px] bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-5 space-y-4">
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 w-[calc(100%-1rem)] sm:w-[420px] bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-4 sm:p-5 space-y-4">
             <h3 className="text-sm font-bold text-slate-200">
               {editingPreset ? 'Edit Preset' : 'Save as Preset'}
             </h3>
