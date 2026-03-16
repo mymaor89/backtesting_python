@@ -19,7 +19,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-mono">
       {/* Header */}
-      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
+      <header className="border-b border-slate-800 px-2 sm:px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-cyan-400 text-xl font-bold">⚡ Strategy Lab</span>
           <span className="text-slate-600 text-sm">fast-trade v2</span>
@@ -59,7 +59,7 @@ export default function App() {
         </nav>
       </header>
 
-      <main className="p-6 w-full">
+      <main className="p-2 sm:p-6 w-full">
         {activeTab === 'backtest' ? (
           <div className="space-y-6">
             {/* Editor + Summary side-by-side */}

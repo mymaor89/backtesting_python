@@ -50,7 +50,7 @@ export function SummaryCards({ summary, runId, cached }: Props) {
 
   return (
     <div className="bg-slate-900 rounded-xl border border-slate-800">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+      <div className="flex items-center justify-between px-2 sm:px-4 py-3 border-b border-slate-800">
         <span className="text-sm text-slate-400 font-semibold">Summary</span>
         <div className="flex items-center gap-2">
           {cached && (
@@ -62,10 +62,14 @@ export function SummaryCards({ summary, runId, cached }: Props) {
         </div>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-6 gap-px bg-slate-800">
-        {METRICS.map(m => {
+        {METRICS.filter(m => {
+          if (m.key === 'leverage' && (summary.leverage ?? 1) <= 1) return false
+          if (m.key === 'num_liquidations' && (summary.num_liquidations ?? 0) === 0 && (summary.leverage ?? 1) <= 1) return false
+          return true
+        }).map(m => {
           const val = (summary as Record<string, unknown>)[m.key] as number | null | undefined
           return (
-            <div key={m.key} className="bg-slate-900 p-4">
+            <div key={m.key} className="bg-slate-900 p-2 sm:p-4">
               <p className="text-slate-500 text-xs mb-1">{m.label}</p>
               <p className={`text-lg font-semibold ${valueColor(m, val)}`}>{m.format(val)}</p>
             </div>
