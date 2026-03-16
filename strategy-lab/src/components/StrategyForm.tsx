@@ -150,7 +150,7 @@ export function StrategyForm({ state, onChange }: Props) {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="p-4 space-y-6 overflow-y-auto max-h-[620px]">
+    <div className="p-4 space-y-6 overflow-y-auto max-h-[85vh]">
 
       {/* ── Configuration ───────────────────────────────────────────────── */}
       <div>

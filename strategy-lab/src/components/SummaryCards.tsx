@@ -59,7 +59,7 @@ export function SummaryCards({ summary, runId, cached }: Props) {
           {runId && <span className="text-slate-600 text-xs font-mono">{runId.slice(0, 8)}…</span>}
         </div>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-slate-800">
+      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-6 gap-px bg-slate-800">
         {METRICS.map(m => {
           const val = (summary as Record<string, unknown>)[m.key] as number | null | undefined
           return (

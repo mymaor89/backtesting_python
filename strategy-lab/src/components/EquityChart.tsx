@@ -65,7 +65,7 @@ export function EquityChart({ data }: Props) {
   // ── Price chart (close + overlay indicators + trade markers) ────────────────
   useEffect(() => {
     if (!priceRef.current || data.length === 0) return
-    const chart = makeChart(priceRef.current, 300)
+    const chart = makeChart(priceRef.current, 450)
 
     // Close price — main series
     const priceSeries = chart.addLineSeries({
@@ -133,7 +133,7 @@ export function EquityChart({ data }: Props) {
   // ── Equity comparison chart (strategy vs buy-and-hold) ──────────────────────
   useEffect(() => {
     if (!equityRef.current || data.length === 0) return
-    const chart = makeChart(equityRef.current, 180)
+    const chart = makeChart(equityRef.current, 250)
 
     // Find first point that has both close and adj_equity
     const firstIdx = data.findIndex(d => d.close != null && d.adj_equity != null)
@@ -190,7 +190,7 @@ export function EquityChart({ data }: Props) {
   // ── Oscillator chart (RSI, MACD, …) ─────────────────────────────────────────
   useEffect(() => {
     if (!oscRef.current || data.length === 0 || oscNames.length === 0) return
-    const chart = makeChart(oscRef.current, 160)
+    const chart = makeChart(oscRef.current, 220)
 
     oscNames.forEach((name, i) => {
       const series = chart.addLineSeries({

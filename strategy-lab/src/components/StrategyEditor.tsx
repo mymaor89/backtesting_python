@@ -371,7 +371,7 @@ export function StrategyEditor({ onRun, loading }: Props) {
         <textarea
           value={json}
           onChange={e => setJson(e.target.value)}
-          className="flex-1 bg-transparent text-slate-300 text-xs p-4 resize-none outline-none min-h-[380px] font-mono leading-relaxed"
+          className="flex-1 bg-transparent text-slate-300 text-xs p-4 resize-none outline-none min-h-[60vh] font-mono leading-relaxed"
           spellCheck={false}
         />
       ) : (

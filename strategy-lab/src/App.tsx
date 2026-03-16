@@ -39,7 +39,7 @@ export default function App() {
         </nav>
       </header>
 
-      <main className="p-6 max-w-screen-2xl mx-auto">
+      <main className="p-6 w-full">
         {activeTab === 'backtest' ? (
           <div className="space-y-6">
             {/* Editor + Summary side-by-side */}
