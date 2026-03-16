@@ -5,6 +5,7 @@ import { TradesTable } from './components/TradesTable'
 import { SummaryCards } from './components/SummaryCards'
 import { OptimizePanel } from './components/OptimizePanel'
 import { useBacktest } from './hooks/useBacktest'
+import { useHealthCheck } from './hooks/useHealthCheck'
 
 type Tab = 'backtest' | 'optimize'
 type ResultTab = 'chart' | 'trades'
@@ -13,6 +14,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('backtest')
   const [resultTab, setResultTab] = useState<ResultTab>('chart')
   const { loading, result, error, runBacktest } = useBacktest()
+  const apiHealth = useHealthCheck()
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-mono">
@@ -22,6 +24,24 @@ export default function App() {
           <span className="text-cyan-400 text-xl font-bold">⚡ Strategy Lab</span>
           <span className="text-slate-600 text-sm">fast-trade v2</span>
         </div>
+        <div className="flex items-center gap-3">
+          <span
+            className={`inline-block w-2.5 h-2.5 rounded-full ${
+              apiHealth === 'healthy'
+                ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]'
+                : apiHealth === 'unhealthy'
+                ? 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.5)]'
+                : 'bg-slate-500 animate-pulse'
+            }`}
+            title={`API: ${apiHealth}`}
+          />
+          <span className={`text-xs ${
+            apiHealth === 'healthy' ? 'text-emerald-400' : apiHealth === 'unhealthy' ? 'text-red-400' : 'text-slate-500'
+          }`}>
+            {apiHealth === 'healthy' ? 'API' : apiHealth === 'unhealthy' ? 'Offline' : '...'}
+          </span>
+        </div>
+
         <nav className="flex gap-1">
           {(['backtest', 'optimize'] as Tab[]).map(tab => (
             <button
