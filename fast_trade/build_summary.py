@@ -157,7 +157,7 @@ def build_summary(df, performance_start_time, backtest=None):
         "loss_perc": float(loss_perc if not pd.isna(loss_perc) else 0),
         "equity_peak": float(equity_peak if not pd.isna(equity_peak) else 0),
         "equity_final": float(equity_final if not pd.isna(equity_final) else 0),
-        "max_drawdown": float(max_drawdown if not pd.isna(max_drawdown) else 0),
+        "max_drawdown": float(drawdown_metrics.get("max_drawdown_pct", 0)),
         "total_fees": float(total_fees if not pd.isna(total_fees) else 0),
         "total_fees_perc": float(total_fees_perc if not pd.isna(total_fees_perc) else 0),
         "first_tic": start_date.strftime("%Y-%m-%d %H:%M:%S"),

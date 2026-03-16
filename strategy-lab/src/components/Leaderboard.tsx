@@ -1,0 +1,88 @@
+import React from 'react'
+import { useLeaderboard, type LeaderboardEntry } from '../hooks/useLeaderboard'
+
+const cls = {
+  container: 'bg-slate-900 rounded-xl border border-slate-800 overflow-hidden',
+  header: 'px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50',
+  title: 'text-sm font-bold text-slate-200 uppercase tracking-wider',
+  table: 'w-full text-left border-collapse',
+  th: 'px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800',
+  td: 'px-4 py-4 text-xs text-slate-300 border-b border-slate-800/50',
+  row: 'hover:bg-slate-800/30 transition-colors',
+  rank: 'text-cyan-500/50 font-mono font-bold text-[10px]',
+  badge: 'px-2 py-0.5 rounded text-[10px] font-mono font-bold leading-none capitalize',
+  refreshBtn: 'text-xs text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1.5'
+}
+
+function Metric({ value, format }: { value: number, format: (v: number) => string }) {
+  const color = value > 0 ? 'text-emerald-400' : value < 0 ? 'text-red-400' : 'text-slate-400'
+  return <span className={color}>{format(value)}</span>
+}
+
+export function Leaderboard() {
+  const { entries, loading, refresh } = useLeaderboard()
+
+  return (
+    <div className={cls.container}>
+      <div className={cls.header}>
+        <div className="flex items-center gap-3">
+          <h2 className={cls.title}>Performance Leaderboard</h2>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-900/30 text-cyan-500 font-bold border border-cyan-800/50">Top 50</span>
+        </div>
+        <button onClick={refresh} disabled={loading} className={cls.refreshBtn}>
+          {loading ? 'Refreshing...' : '↻ Refresh'}
+        </button>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className={cls.table}>
+          <thead>
+            <tr>
+              <th className={cls.th}>Rank</th>
+              <th className={cls.th}>Strategy</th>
+              <th className={cls.th}>Return</th>
+              <th className={cls.th}>Sharpe</th>
+              <th className={cls.th}>Win Rate</th>
+              <th className={cls.th}>Max DD</th>
+              <th className={cls.th}>Finished</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.length === 0 && !loading && (
+              <tr>
+                <td colSpan={8} className="px-6 py-12 text-center text-slate-500 italic">
+                  No backtest results found yet. Run some strategies to see them here!
+                </td>
+              </tr>
+            )}
+            {entries.map((e, idx) => (
+              <tr key={e.run_id} className={cls.row}>
+                <td className={cls.td}><span className={cls.rank}>#{idx + 1}</span></td>
+                <td className={cls.td}>
+                  <div className="flex flex-col">
+                    <span className="font-bold text-slate-200">{e.strategy_name}</span>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="text-[10px] text-slate-400 font-bold">{e.symbol || 'N/A'}</span>
+                      <span className="text-[10px] text-slate-500 bg-slate-800/50 px-1 rounded border border-slate-800">{e.freq || 'N/A'}</span>
+                    </div>
+                  </div>
+                </td>
+                <td className={cls.td + " font-mono font-bold"}>
+                  <Metric value={e.return_perc} format={v => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`} />
+                </td>
+                <td className={cls.td + " font-mono"}>{e.sharpe_ratio.toFixed(2)}</td>
+                <td className={cls.td + " font-mono"}>{e.win_rate.toFixed(1)}%</td>
+                <td className={cls.td + " font-mono text-red-500/70"}>
+                  {e.max_drawdown <= 0 ? e.max_drawdown.toFixed(2) : `-${e.max_drawdown.toFixed(2)}`}%
+                </td>
+                <td className={cls.td + " text-[10px] text-slate-600 font-mono"}>
+                  {new Date(e.finished_at).toLocaleString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}

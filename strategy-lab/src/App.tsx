@@ -4,10 +4,11 @@ import { EquityChart } from './components/EquityChart'
 import { TradesTable } from './components/TradesTable'
 import { SummaryCards } from './components/SummaryCards'
 import { OptimizePanel } from './components/OptimizePanel'
+import { Leaderboard } from './components/Leaderboard'
 import { useBacktest } from './hooks/useBacktest'
 import { useHealthCheck } from './hooks/useHealthCheck'
 
-type Tab = 'backtest' | 'optimize'
+type Tab = 'backtest' | 'optimize' | 'leaderboard'
 type ResultTab = 'chart' | 'trades'
 
 export default function App() {
@@ -43,7 +44,7 @@ export default function App() {
         </div>
 
         <nav className="flex gap-1">
-          {(['backtest', 'optimize'] as Tab[]).map(tab => (
+          {(['backtest', 'optimize', 'leaderboard'] as Tab[]).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -53,7 +54,7 @@ export default function App() {
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {tab === 'backtest' ? 'Strategy Lab' : tab === 'optimize' ? 'Optimizer' : 'Leaderboard'}
             </button>
           ))}
         </nav>
@@ -112,8 +113,10 @@ export default function App() {
               </div>
             )}
           </div>
-        ) : (
+        ) : activeTab === 'optimize' ? (
           <OptimizePanel />
+        ) : (
+          <Leaderboard />
         )}
       </main>
     </div>

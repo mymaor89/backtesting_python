@@ -24,8 +24,14 @@ func main() {
 	proxy.Director = func(req *http.Request) {
 		req.URL.Scheme = target.Scheme
 		req.URL.Host = target.Host
-		// Strip /api prefix so /api/backtest → /backtest
-		req.URL.Path = strings.TrimPrefix(req.URL.Path, "/api")
+		// Strip prefixes so /api/backtest → /backtest and /api-strategy/leaderboard → /leaderboard
+		path := req.URL.Path
+		if strings.HasPrefix(path, "/api-strategy") {
+			req.URL.Path = strings.TrimPrefix(path, "/api-strategy")
+		} else {
+			req.URL.Path = strings.TrimPrefix(path, "/api")
+		}
+		
 		if req.URL.Path == "" {
 			req.URL.Path = "/"
 		}
@@ -39,8 +45,12 @@ func main() {
 		w.Write([]byte(`{"status":"ok","service":"go-proxy"}`))
 	})
 
-	// Proxy everything under /api/* to the Python service
+	// Proxy everything under /api/* and /api-strategy/* to the Python service
 	mux.Handle("/api/", cors(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxy.ServeHTTP(w, r)
+	})))
+
+	mux.Handle("/api-strategy/", cors(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		proxy.ServeHTTP(w, r)
 	})))
 

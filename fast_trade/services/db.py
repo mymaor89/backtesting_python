@@ -94,7 +94,7 @@ def upsert_strategy(engine: sa.Engine, name: str, config: dict) -> Optional[int]
         row = conn.execute(
             text("""
                 INSERT INTO strategies (name, config)
-                VALUES (:name, :config::jsonb)
+                VALUES (:name, CAST(:config AS JSONB))
                 ON CONFLICT DO NOTHING
                 RETURNING id
             """),
@@ -128,11 +128,11 @@ def save_backtest_run(
                      started_at, finished_at, status, summary, params)
                 VALUES
                     (:id, :sid, :sh, :dh,
-                     NOW(), NOW(), 'done', :summary::jsonb, :params::jsonb)
+                     NOW(), NOW(), 'done', CAST(:summary AS JSONB), CAST(:params AS JSONB))
                 ON CONFLICT (id) DO UPDATE
                     SET finished_at = NOW(),
                         status      = 'done',
-                        summary     = :summary::jsonb
+                        summary     = CAST(:summary AS JSONB)
             """),
             {
                 "id": run_id,
@@ -163,6 +163,46 @@ def list_presets(engine: sa.Engine) -> list[dict]:
             "state": r.state,
             "created_at": r.created_at.isoformat() if r.created_at else None,
             "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        }
+        for r in rows
+    ]
+
+
+def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
+    """Return top backtest runs ranked by return_perc, then sharpe_ratio."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("""
+                SELECT 
+                    r.id, s.name as strategy_name, r.strategy_hash, r.data_hash, 
+                    r.finished_at, r.params->>'symbol' as symbol, r.params->>'freq' as freq,
+                    (r.summary->>'return_perc')::float as return_perc,
+                    (r.summary->>'sharpe_ratio')::float as sharpe_ratio,
+                    (r.summary->>'win_rate')::float as win_rate,
+                    (r.summary->>'total_trades')::int as total_trades,
+                    COALESCE((r.summary->'drawdown_metrics'->>'max_drawdown_pct')::float, (r.summary->>'max_drawdown')::float) as max_drawdown
+                FROM backtest_runs r
+                LEFT JOIN strategies s ON r.strategy_id = s.id
+                WHERE r.status = 'done' 
+                  AND r.summary ? 'return_perc'
+                ORDER BY (r.summary->>'return_perc')::float DESC
+                LIMIT :limit
+            """),
+            {"limit": limit}
+        ).fetchall()
+    
+    return [
+        {
+            "run_id": r.id,
+            "strategy_name": r.strategy_name or "Unnamed",
+            "symbol": r.symbol,
+            "freq": r.freq,
+            "return_perc": round(r.return_perc, 2) if r.return_perc is not None else 0,
+            "sharpe_ratio": round(r.sharpe_ratio, 3) if r.sharpe_ratio is not None else 0,
+            "win_rate": round(r.win_rate, 2) if r.win_rate is not None else 0,
+            "total_trades": r.total_trades or 0,
+            "max_drawdown": round(r.max_drawdown, 2) if r.max_drawdown is not None else 0,
+            "finished_at": r.finished_at.isoformat() if r.finished_at else None,
         }
         for r in rows
     ]

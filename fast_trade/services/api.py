@@ -12,6 +12,7 @@ GET  /runs/{run_id}           Retrieve a previously stored backtest run by ID
 from __future__ import annotations
 
 import uuid
+import logging
 from typing import Any, Optional
 
 import pandas as pd
@@ -31,6 +32,7 @@ from fast_trade.services.db import (
     create_preset,
     update_preset,
     delete_preset,
+    list_leaderboard,
 )
 from fast_trade.services.serializers import backtest_response, summary_to_json
 from fast_trade.run_backtest import run_backtest
@@ -44,6 +46,8 @@ app = FastAPI(
         "returns metrics and equity-curve data consumable by the React frontend."
     ),
 )
+
+logger = logging.getLogger("fast_trade.api")
 
 # Allow the Go backend and React dev server to call this API.
 app.add_middleware(
@@ -200,13 +204,15 @@ def run_backtest_endpoint(req: BacktestRequest) -> dict:
 
     # Persist to TimescaleDB (best-effort — never fails the HTTP response)
     try:
+        clean_summary = summary_to_json(summary)
+        clean_strategy = summary_to_json(strategy)
         strategy_id = upsert_strategy(
-            engine, strategy.get("name", "unnamed"), strategy
+            engine, strategy.get("name", "unnamed"), clean_strategy
         )
-        save_backtest_run(engine, run_id, strategy_id, s_hash, d_hash, summary, strategy)
+        save_backtest_run(engine, run_id, strategy_id, s_hash, d_hash, clean_summary, clean_strategy)
         save_trades(engine, run_id, trade_log)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.error(f"Failed to persist backtest {run_id}: {exc}", exc_info=True)
 
     return backtest_response(run_id, summary, df, trade_log, cached=False)
 
@@ -309,6 +315,16 @@ def get_presets() -> list[dict]:
         return list_presets(_db())
     except Exception:
         return []
+
+
+@app.get("/leaderboard", tags=["backtest"])
+@app.get("/api-strategy/leaderboard", tags=["backtest"])
+def get_leaderboard(limit: int = 50) -> list[dict]:
+    """Retrieve top-performing backtest runs from TimescaleDB."""
+    try:
+        return list_leaderboard(_db(), limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/presets", tags=["presets"], status_code=201)

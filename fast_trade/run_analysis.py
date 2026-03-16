@@ -80,15 +80,16 @@ def _simulate_account_path(
             # worst case equity check for liquidation
             worst_price = low if position_type == 1 else high
             
-            # current_worst_equity calculation depends on position type
-            if position_type == 1:
-                current_worst_equity = cash_value + aux_value * worst_price - (loan if leverage > 1.0 else 0.0)
-            else:
-                current_worst_equity = cash_value + aux_value * worst_price
-
-            # Liquidation: loss >= 90% of margin
-            if current_worst_equity <= (entry_equity - 0.9 * margin_used):
-                action_code = ACTION_LIQUIDATION
+            # Liquidation check (Leverage safety valve)
+            if leverage > 1.0:
+                # We check based on current_worst_equity which is (cash + units * worst_price - loan)
+                if position_type == 1:
+                    current_worst_equity = cash_value + aux_value * worst_price - loan
+                else:
+                    current_worst_equity = cash_value + abs(aux_value) * (entry_price - worst_price) + margin_used # margin + P&L
+                
+                if current_worst_equity <= (entry_equity - 0.9 * margin_used) or current_worst_equity <= 0:
+                    action_code = ACTION_LIQUIDATION
 
             if position_type == 1:  # LONG
                 if high > high_water_mark:
@@ -326,97 +327,138 @@ def apply_logic_to_df(df: pd.DataFrame, backtest: dict, progress_callback=None):
         in_trade = False
         account_value = float(backtest.get("base_balance"))
         comission = float(backtest.get("comission"))
-        lot_size = backtest.get("lot_size_perc")
-        max_lot_size = backtest.get("max_lot_size")
-        fb_trailing_stop_loss = float(backtest.get("trailing_stop_loss", 0))
-        fb_stop_loss = float(backtest.get("stop_loss", 0))
+        lot_size_perc = float(backtest.get("lot_size_perc", 1.0))
+        max_lot_size = backtest.get("max_lot_size", 0)
+        leverage = float(backtest.get("leverage", 1.0))
+        execution_at = backtest.get("execution_at", "close")
+        slippage_rate = float(backtest.get("slippage", 0)) / 100
+        stop_loss = float(backtest.get("stop_loss", 0))
+        take_profit = float(backtest.get("take_profit", 0))
+        trailing_stop_loss = float(backtest.get("trailing_stop_loss", 0))
 
-        new_account_value = account_value
-
+        cash_value = account_value
         aux = 0.0
         entry_price = 0.0
+        margin_used = 0.0
+        loan = 0.0
+        entry_equity = 0.0
         high_water_mark = 0.0
+        low_water_mark = 0.0
         aux_list = []
         account_value_list = []
         in_trade_list = []
         fee_list = []
         adj_account_value_list = []
+        action_list = []
 
         total_rows = len(df)
         update_every = max(1, total_rows // 200)
+        
+        # We need the original actions
+        actions = df["action"].values
+        
         for idx, row in enumerate(df.itertuples()):
             close = row.close
             high = row.high
-            curr_action = row.action
+            low = row.low
+            curr_action = actions[idx]
             fee = 0.0
 
-            # Check stop losses while in a trade
             if in_trade:
-                if high > high_water_mark:
-                    high_water_mark = high
-                if fb_stop_loss and close <= entry_price * (1 - fb_stop_loss):
-                    curr_action = "x"
-                if fb_trailing_stop_loss and close <= high_water_mark * (1 - fb_trailing_stop_loss):
-                    curr_action = "x"
+                worst_price = low if aux > 0 else high
+                if aux > 0: # Long
+                    curr_equity = cash_value + aux * worst_price - loan
+                else: # Short
+                    curr_equity = margin_used + (abs(aux) * (entry_price - worst_price))
+                
+                if leverage > 1.0 and (curr_equity <= (entry_equity - 0.9 * margin_used) or curr_equity <= 0):
+                    curr_action = "l"
 
-            if curr_action in ["e", "ae"] and not in_trade:
-                # this means we should enter the trade
-                [in_trade, aux, new_account_value, fee] = enter_position(
-                    account_value_list,
-                    lot_size,
-                    account_value,
-                    max_lot_size,
-                    close,
-                    comission,
-                )
-                entry_price = close
-                high_water_mark = close
+                if aux > 0: # Long
+                    if high > high_water_mark: high_water_mark = high
+                    if stop_loss and low <= entry_price * (1 - stop_loss): curr_action = "x"
+                    if take_profit and high >= entry_price * (1 + take_profit): curr_action = "x"
+                    if trailing_stop_loss and low <= high_water_mark * (1 - trailing_stop_loss): curr_action = "x"
+                else: # Short
+                    if low < low_water_mark: low_water_mark = low
+                    if stop_loss and high >= entry_price * (1 + stop_loss): curr_action = "xs"
+                    if take_profit and low <= entry_price * (1 - take_profit): curr_action = "xs"
+                    if trailing_stop_loss and high >= low_water_mark * (1 + trailing_stop_loss): curr_action = "xs"
 
-            if curr_action in ["x", "ax", "tsl"] and in_trade:
-                # this means we should exit the trade
+            # Handle Exit
+            if in_trade and curr_action in ["x", "ax", "tsl", "xs", "l"]:
+                if curr_action == "l":
+                    exit_price = worst_price
+                else:
+                    # simplistic exit for fallback
+                    exit_price = (df.iloc[idx+1].open if execution_at == "next_open" and idx+1 < total_rows else close)
+                    exit_price *= (1 - slippage_rate) if aux > 0 else (1 + slippage_rate)
+                
+                if aux > 0: # Exit Long
+                    base_val = abs(aux) * exit_price
+                    fee = (base_val / 100) * comission
+                    cash_value = round(cash_value + base_val - loan - fee, 8)
+                else: # Exit Short
+                    buyback_cost = abs(aux) * exit_price
+                    fee = (buyback_cost / 100) * comission
+                    cash_value = round(cash_value - buyback_cost - fee, 8)
+                
+                aux = 0.0
+                loan = 0.0
+                in_trade = False
 
-                [in_trade, aux, new_account_value, fee] = exit_position(
-                    account_value_list, close, aux, comission
-                )
-                entry_price = 0.0
-                high_water_mark = 0.0
+            # Handle Entry
+            if not in_trade:
+                if curr_action in ["e", "ae"]:
+                    entry_price = (df.iloc[idx+1].open if execution_at == "next_open" and idx+1 < total_rows else close)
+                    entry_price *= (1 + slippage_rate)
+                    
+                    margin_used = cash_value * lot_size_perc
+                    if max_lot_size and margin_used > max_lot_size: margin_used = max_lot_size
+                    
+                    units = (margin_used * leverage) / entry_price
+                    fee = (units * entry_price / 100) * comission
+                    
+                    entry_equity = cash_value
+                    aux = units - (fee / entry_price)
+                    cash_value = round(cash_value - margin_used, 8)
+                    loan = round((units * entry_price) - margin_used, 8)
+                    in_trade = True
+                    high_water_mark = entry_price
+                elif curr_action == "es":
+                    entry_price = (df.iloc[idx+1].open if execution_at == "next_open" and idx+1 < total_rows else close)
+                    entry_price *= (1 - slippage_rate)
+                    
+                    margin_used = cash_value * lot_size_perc
+                    if max_lot_size and margin_used > max_lot_size: margin_used = max_lot_size
+                    
+                    units = (margin_used * leverage) / entry_price
+                    fee = (units * entry_price / 100) * comission
+                    
+                    entry_equity = cash_value
+                    cash_value = round(cash_value + (units * entry_price) - fee, 8)
+                    aux = -units
+                    in_trade = True
+                    low_water_mark = entry_price
 
-            adj_account_value = new_account_value + convert_aux_to_base(aux, close)
-
+            adj_account_value = cash_value + (aux * close) - (loan if aux > 0 else 0)
+            
             aux_list.append(aux)
-            account_value_list.append(new_account_value)
+            account_value_list.append(cash_value)
             in_trade_list.append(in_trade)
             fee_list.append(fee)
             adj_account_value_list.append(adj_account_value)
-            if progress_callback and (
-                idx % update_every == 0 or idx == total_rows - 1
-            ):
+            action_list.append(curr_action)
+            
+            if progress_callback and (idx % update_every == 0 or idx == total_rows - 1):
                 progress_callback({"percent": int((idx + 1) / total_rows * 100)})
-
-        if backtest.get("exit_on_end") and in_trade:
-            # this means we should exit the trade
-            [in_trade, aux, new_account_value, fee] = exit_position(
-                account_value_list, close, aux, comission
-            )
-            new_date = df.index[-1] + timedelta(seconds=1)
-
-            new_row = pd.DataFrame(data=[df.iloc[-1]], index=[new_date])
-
-            df = pd.concat([df, pd.DataFrame(data=new_row)])
-            aux_list.append(fee)
-
-            account_value_list.append(new_account_value)
-            in_trade_list.append(in_trade)
-            fee_list.append(fee)
-            adj_account_value = new_account_value + convert_aux_to_base(aux, close)
-
-            adj_account_value_list.append(adj_account_value)
 
         df["aux"] = aux_list
         df["account_value"] = account_value_list
         df["adj_account_value"] = adj_account_value_list
         df["in_trade"] = in_trade_list
         df["fee"] = fee_list
+        df["action"] = action_list
 
     return df
 
