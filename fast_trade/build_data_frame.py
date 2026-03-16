@@ -228,7 +228,7 @@ def apply_transformers_to_dataframe(
             raise ValueError(f"Transformer '{transformer}' not a valid transformer.")
         try:
             if len(ind.get("args", [])):
-                args = ind.get("args")
+                args = [a for a in ind.get("args") if a is not None and a != 0]
                 trans_res = transformers_map[transformer](tmp_df, *args)
             else:
                 trans_res = transformers_map[transformer](tmp_df)

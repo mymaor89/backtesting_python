@@ -409,28 +409,38 @@ def _take_action_compiled(current_frame, compiled_logics, last_frames=None, requ
     if last_frames is None:
         last_frames = []
 
+    # Separate AND conditions from OR groups.
+    # OR groups provide alternative paths: if ANY or-group condition is met,
+    # the action triggers regardless of the AND conditions.
+    and_conditions = []
+    or_conditions = []
     for compiled_logic in compiled_logics:
-        # OR group: any sub-rule must be True
         if isinstance(compiled_logic, dict):
-            result = any(
-                _process_compiled_logic(sub, current_frame)
-                for sub in compiled_logic["or"]
-            )
+            or_conditions.extend(compiled_logic["or"])
         else:
-            frames = compiled_logic[3]
-            if frames > 0:
-                if len(last_frames) < frames:
-                    if not require_any:
-                        return False
-                    continue
+            and_conditions.append(compiled_logic)
 
-                result = True
-                for frame_idx in range(frames):
-                    if not _process_compiled_logic(compiled_logic, last_frames[frame_idx]):
-                        result = False
-                        break
-            else:
-                result = _process_compiled_logic(compiled_logic, current_frame)
+    # Check OR conditions first — any single match triggers the action
+    for sub in or_conditions:
+        if _process_compiled_logic(sub, current_frame):
+            return True
+
+    # Check AND conditions — all must pass
+    for compiled_logic in and_conditions:
+        frames = compiled_logic[3]
+        if frames > 0:
+            if len(last_frames) < frames:
+                if not require_any:
+                    return False
+                continue
+
+            result = True
+            for frame_idx in range(frames):
+                if not _process_compiled_logic(compiled_logic, last_frames[frame_idx]):
+                    result = False
+                    break
+        else:
+            result = _process_compiled_logic(compiled_logic, current_frame)
 
         if require_any and result:
             return True

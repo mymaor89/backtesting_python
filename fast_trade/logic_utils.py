@@ -62,14 +62,42 @@ def _single_condition(df: pd.DataFrame, logic) -> pd.Series:
 def build_mask(df: pd.DataFrame, logic_list: List, combine_any: bool) -> pd.Series:
     if not logic_list:
         return pd.Series(False, index=df.index)
-    mask = pd.Series(not combine_any, index=df.index)
+
+    # Separate AND conditions from OR groups.
+    # OR groups provide alternative paths — if any or-condition is met, the mask is True.
+    and_logics = []
+    or_logics = []
     for logic in logic_list:
         if isinstance(logic, dict) and "or" in logic:
-            condition = build_mask(df, logic["or"], combine_any=True)
+            or_logics.extend(logic["or"])
         else:
-            condition = _single_condition(df, logic)
-        mask = mask | condition if combine_any else mask & condition
-    return mask
+            and_logics.append(logic)
+
+    if combine_any:
+        # any_enter / any_exit: any single condition triggers
+        mask = pd.Series(False, index=df.index)
+        for logic in and_logics:
+            mask = mask | _single_condition(df, logic)
+        for logic in or_logics:
+            mask = mask | _single_condition(df, logic)
+        return mask
+
+    # For enter/exit: OR conditions provide an alternative path
+    # Result = (all AND conditions) OR (any OR condition)
+    and_mask = pd.Series(True, index=df.index)
+    for logic in and_logics:
+        and_mask = and_mask & _single_condition(df, logic)
+
+    or_mask = pd.Series(False, index=df.index)
+    for logic in or_logics:
+        or_mask = or_mask | _single_condition(df, logic)
+
+    if and_logics and or_logics:
+        return and_mask | or_mask
+    elif or_logics:
+        return or_mask
+    else:
+        return and_mask
 
 
 def vectorized_actions(df: pd.DataFrame, backtest: dict) -> pd.Series:
