@@ -227,7 +227,11 @@ def _calc_raw_efficiency(return_perc: float, max_drawdown: float, time_in_market
 
 
 def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
-    """Return top backtest runs ranked by return_perc, including efficiency_score and leverage."""
+    """Return top backtest runs ranked by efficiency_score (calculated from return, risk, and time).
+    
+    To find the 'smartest' strategies, we fetch a larger candidate set (500) sorted by raw return,
+    calculate normalized efficiency scores, and then sort the final result by that score.
+    """
     with engine.connect() as conn:
         rows = conn.execute(
             text("""
@@ -244,7 +248,7 @@ def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
                     (r.summary->>'total_trades')::int as total_trades,
                     (r.summary->>'buy_and_hold_perc')::float as buy_and_hold_perc,
                     COALESCE((r.summary->'drawdown_metrics'->>'max_drawdown_pct')::float, (r.summary->>'max_drawdown')::float) as max_drawdown,
-                    COALESCE((r.summary->>'time_in_market')::float, 0) as time_in_market,
+                    COALESCE((r.summary->>'time_in_market')::float, (r.summary->>'market_exposure_perc')::float, 0) as time_in_market,
                     COALESCE(r.leverage, (r.summary->>'leverage')::float, 1.0) as leverage
                 FROM backtest_runs r
                 LEFT JOIN strategies s ON r.strategy_id = s.id
@@ -252,55 +256,62 @@ def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
                   AND r.summary ? 'return_perc'
                   AND COALESCE(r.leverage, (r.summary->>'leverage')::float, 1.0) <= 1.0
                 ORDER BY (r.summary->>'return_perc')::float DESC
-                LIMIT :limit
+                LIMIT :candidate_limit
             """),
-            {"limit": limit}
+            {"candidate_limit": 500}
         ).fetchall()
 
+    if not rows:
+        return []
+
     # Compute raw efficiency scores for all rows
-    raw_scores = [
-        _calc_raw_efficiency(
+    all_data = []
+    for r in rows:
+        raw_s = _calc_raw_efficiency(
             r.return_perc or 0,
             r.max_drawdown or 0,
             r.time_in_market or 0,
         )
-        for r in rows
-    ]
+        all_data.append({"row": r, "raw_score": raw_s})
 
-    # Normalize to 0-100 using min-max across returned rows
-    if len(raw_scores) > 1:
-        min_s, max_s = min(raw_scores), max(raw_scores)
-        span = max_s - min_s
+    # Normalize to 0-100 using global min-max within this candidate set
+    raw_scores = [d["raw_score"] for d in all_data]
+    min_s, max_s = min(raw_scores), max(raw_scores)
+    span = max_s - min_s
+    
+    for d in all_data:
         if span > 0:
-            normalized = [round((s - min_s) / span * 100, 2) for s in raw_scores]
+            d["normalized"] = round((d["raw_score"] - min_s) / span * 100, 2)
         else:
-            normalized = [100.0] * len(raw_scores)
-    elif len(raw_scores) == 1:
-        normalized = [100.0]
-    else:
-        normalized = []
+            d["normalized"] = 100.0
+
+    # Sort final set by the efficiency score instead of raw return
+    all_data.sort(key=lambda x: x["normalized"], reverse=True)
+    
+    # Take the top 'limit' requested
+    top_entries = all_data[:limit]
 
     return [
         {
-            "run_id": r.id,
-            "strategy_name": r.strategy_name or "Unnamed",
-            "symbol": r.symbol,
-            "freq": r.freq,
-            "username": r.username,
-            "start_date": r.start_date,
-            "end_date": r.end_date,
-            "return_perc": round(r.return_perc, 2) if r.return_perc is not None else 0,
-            "sharpe_ratio": round(r.sharpe_ratio, 3) if r.sharpe_ratio is not None else 0,
-            "win_rate": round(r.win_rate, 2) if r.win_rate is not None else 0,
-            "total_trades": r.total_trades or 0,
-            "buy_and_hold_perc": round(r.buy_and_hold_perc, 2) if r.buy_and_hold_perc is not None else 0,
-            "max_drawdown": round(r.max_drawdown, 2) if r.max_drawdown is not None else 0,
-            "time_in_market": round(r.time_in_market, 2) if r.time_in_market is not None else 0,
-            "leverage": round(r.leverage, 2) if r.leverage is not None else 1.0,
-            "efficiency_score": normalized[i],
-            "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+            "run_id": d["row"].id,
+            "strategy_name": d["row"].strategy_name or "Unnamed",
+            "symbol": d["row"].symbol,
+            "freq": d["row"].freq,
+            "username": d["row"].username,
+            "start_date": d["row"].start_date,
+            "end_date": d["row"].end_date,
+            "return_perc": round(d["row"].return_perc, 2) if d["row"].return_perc is not None else 0,
+            "sharpe_ratio": round(d["row"].sharpe_ratio, 3) if d["row"].sharpe_ratio is not None else 0,
+            "win_rate": round(d["row"].win_rate, 2) if d["row"].win_rate is not None else 0,
+            "total_trades": d["row"].total_trades or 0,
+            "buy_and_hold_perc": round(d["row"].buy_and_hold_perc, 2) if d["row"].buy_and_hold_perc is not None else 0,
+            "max_drawdown": round(d["row"].max_drawdown, 2) if d["row"].max_drawdown is not None else 0,
+            "time_in_market": round(d["row"].time_in_market, 2) if d["row"].time_in_market is not None else 0,
+            "leverage": round(d["row"].leverage, 2) if d["row"].leverage is not None else 1.0,
+            "efficiency_score": d["normalized"],
+            "finished_at": d["row"].finished_at.isoformat() if d["row"].finished_at else None,
         }
-        for i, r in enumerate(rows)
+        for d in top_entries
     ]
 
 
