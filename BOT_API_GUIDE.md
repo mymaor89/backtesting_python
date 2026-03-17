@@ -398,7 +398,66 @@ Use this to verify the API is running before sending backtest requests.
 
 ---
 
-## 8. Tips for Bot Interaction
+## 8. Leaderboard
+
+### Get Leaderboard
+```
+GET /api/leaderboard?limit=50
+```
+Returns top-performing backtest runs ranked by return percentage.
+
+**Response:**
+```json
+[
+  {
+    "run_id": "uuid",
+    "strategy_name": "My Strategy",
+    "symbol": "SPY",
+    "freq": "1D",
+    "username": "maor_the_dev",
+    "start_date": "2024-01-01",
+    "end_date": "2026-03-15",
+    "return_perc": 14.86,
+    "sharpe_ratio": 1.888,
+    "win_rate": 0.85,
+    "total_trades": 14,
+    "buy_and_hold_perc": 24.89,
+    "max_drawdown": -6.07,
+    "time_in_market": 37.98,
+    "leverage": 1.0,
+    "efficiency_score": 82.5,
+    "finished_at": "2026-03-16T22:33:12.416930+00:00"
+  }
+]
+```
+
+**New fields:**
+| Field | Description |
+|-------|-------------|
+| `start_date` / `end_date` | Backtest date range from params |
+| `time_in_market` | Percentage of bars the strategy held a position |
+| `leverage` | Leverage used (only runs with `leverage <= 1.0` appear on leaderboard) |
+| `efficiency_score` | 0–100 score: `return_perc / (\|max_drawdown\|^1.5 × time_in_market)`, normalized across the returned rows. Higher = better risk-adjusted efficiency. |
+
+---
+
+## 9. Username Tracking
+
+When running backtests, you can include a `username` field to track who ran each strategy. This is displayed on the leaderboard.
+
+### Example with Username
+```json
+POST /api/backtest
+{
+  "strategy": { ... },
+  "use_cache": false,
+  "username": "maor_the_dev"
+}
+```
+
+---
+
+## 10. Tips for Bot Interaction
 
 1. **Always set `use_cache: false`** when testing new strategies to get full equity curves
 2. **Check health first** before running backtests
@@ -407,3 +466,4 @@ Use this to verify the API is running before sending backtest requests.
 5. **Watch for overfitting** - if a strategy only works on one narrow date range, it's likely overfit
 6. **Save good strategies as presets** so they can be reused and refined later
 7. **The `state` format differs from `strategy` format** - presets use form state (objects), backtests use raw arrays
+8. **Track your runs** - include `username` to see your strategies on the leaderboard
