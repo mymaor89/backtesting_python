@@ -125,25 +125,27 @@ def save_backtest_run(
     """Persist a completed backtest run to TimescaleDB."""
     symbol = params.get("symbol") or summary.get("symbol")
     freq = params.get("freq") or params.get("chart_period") or summary.get("freq")
-    
+    leverage = float(summary.get("leverage") or params.get("leverage") or 1.0)
+
     with engine.begin() as conn:
         conn.execute(
             text("""
                 INSERT INTO backtest_runs
                     (id, strategy_id, strategy_hash, data_hash,
                      started_at, finished_at, status, summary, params,
-                     symbol, timeframe, username)
+                     symbol, timeframe, username, leverage)
                 VALUES
                     (:id, :sid, :sh, :dh,
                      NOW(), NOW(), 'done', CAST(:summary AS JSONB), CAST(:params AS JSONB),
-                     :symbol, :timeframe, :username)
+                     :symbol, :timeframe, :username, :leverage)
                 ON CONFLICT (id) DO UPDATE
                     SET finished_at = NOW(),
                         status      = 'done',
                         summary     = CAST(:summary AS JSONB),
                         symbol      = :symbol,
                         timeframe   = :timeframe,
-                        username    = :username
+                        username    = :username,
+                        leverage    = :leverage
             """),
             {
                 "id": run_id,
@@ -155,6 +157,7 @@ def save_backtest_run(
                 "symbol": symbol,
                 "timeframe": freq,
                 "username": username,
+                "leverage": leverage,
             },
         )
 
@@ -212,33 +215,71 @@ def list_presets(engine: sa.Engine) -> list[dict]:
     ]
 
 
+def _calc_raw_efficiency(return_perc: float, max_drawdown: float, time_in_market: float) -> float:
+    """Raw efficiency score: return / (|drawdown|^1.5 * time_in_market).
+
+    Non-linear drawdown penalty makes high-drawdown strategies score much worse.
+    Uses a floor of 0.1 for drawdown and 0.01 for time_in_market to avoid div/0.
+    """
+    dd = max(abs(max_drawdown), 0.1)
+    tim = max(time_in_market, 0.01)
+    return return_perc / (dd ** 1.5 * tim)
+
+
 def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
-    """Return top backtest runs ranked by return_perc, then sharpe_ratio."""
+    """Return top backtest runs ranked by return_perc, including efficiency_score and leverage."""
     with engine.connect() as conn:
         rows = conn.execute(
             text("""
-                SELECT 
-                    r.id, s.name as strategy_name, r.strategy_hash, r.data_hash, 
-                    r.finished_at, COALESCE(r.symbol, r.params->>'symbol') as symbol, 
-                    COALESCE(r.timeframe, r.params->>'freq') as freq,
+                SELECT
+                    r.id, s.name as strategy_name, r.strategy_hash, r.data_hash,
+                    r.finished_at, COALESCE(r.symbol, r.params->>'symbol') as symbol,
+                    COALESCE(r.timeframe, r.params->>'freq', r.params->>'chart_period') as freq,
                     r.username,
+                    r.params->>'start' as start_date,
+                    r.params->>'stop' as end_date,
                     (r.summary->>'return_perc')::float as return_perc,
                     (r.summary->>'sharpe_ratio')::float as sharpe_ratio,
                     (r.summary->>'win_rate')::float as win_rate,
                     (r.summary->>'total_trades')::int as total_trades,
                     (r.summary->>'buy_and_hold_perc')::float as buy_and_hold_perc,
-                    COALESCE((r.summary->'drawdown_metrics'->>'max_drawdown_pct')::float, (r.summary->>'max_drawdown')::float) as max_drawdown
+                    COALESCE((r.summary->'drawdown_metrics'->>'max_drawdown_pct')::float, (r.summary->>'max_drawdown')::float) as max_drawdown,
+                    COALESCE((r.summary->>'time_in_market')::float, 0) as time_in_market,
+                    COALESCE(r.leverage, (r.summary->>'leverage')::float, 1.0) as leverage
                 FROM backtest_runs r
                 LEFT JOIN strategies s ON r.strategy_id = s.id
-                WHERE r.status = 'done' 
+                WHERE r.status = 'done'
                   AND r.summary ? 'return_perc'
-                  AND COALESCE((r.summary->>'leverage')::float, 1.0) <= 1.0
+                  AND COALESCE(r.leverage, (r.summary->>'leverage')::float, 1.0) <= 1.0
                 ORDER BY (r.summary->>'return_perc')::float DESC
                 LIMIT :limit
             """),
             {"limit": limit}
         ).fetchall()
-    
+
+    # Compute raw efficiency scores for all rows
+    raw_scores = [
+        _calc_raw_efficiency(
+            r.return_perc or 0,
+            r.max_drawdown or 0,
+            r.time_in_market or 0,
+        )
+        for r in rows
+    ]
+
+    # Normalize to 0-100 using min-max across returned rows
+    if len(raw_scores) > 1:
+        min_s, max_s = min(raw_scores), max(raw_scores)
+        span = max_s - min_s
+        if span > 0:
+            normalized = [round((s - min_s) / span * 100, 2) for s in raw_scores]
+        else:
+            normalized = [100.0] * len(raw_scores)
+    elif len(raw_scores) == 1:
+        normalized = [100.0]
+    else:
+        normalized = []
+
     return [
         {
             "run_id": r.id,
@@ -246,15 +287,20 @@ def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
             "symbol": r.symbol,
             "freq": r.freq,
             "username": r.username,
+            "start_date": r.start_date,
+            "end_date": r.end_date,
             "return_perc": round(r.return_perc, 2) if r.return_perc is not None else 0,
             "sharpe_ratio": round(r.sharpe_ratio, 3) if r.sharpe_ratio is not None else 0,
             "win_rate": round(r.win_rate, 2) if r.win_rate is not None else 0,
             "total_trades": r.total_trades or 0,
             "buy_and_hold_perc": round(r.buy_and_hold_perc, 2) if r.buy_and_hold_perc is not None else 0,
             "max_drawdown": round(r.max_drawdown, 2) if r.max_drawdown is not None else 0,
+            "time_in_market": round(r.time_in_market, 2) if r.time_in_market is not None else 0,
+            "leverage": round(r.leverage, 2) if r.leverage is not None else 1.0,
+            "efficiency_score": normalized[i],
             "finished_at": r.finished_at.isoformat() if r.finished_at else None,
         }
-        for r in rows
+        for i, r in enumerate(rows)
     ]
 
 
