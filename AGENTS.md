@@ -47,6 +47,12 @@
 - PRs must include: clear description, before/after behavior, test coverage, and docs/README updates when user‑facing.
 - Ensure `pytest`, `flake8`, and coverage run clean locally before requesting review.
 
+## API Contract & UI Synchronization
+- **Source of Truth**: The API contract is defined in [`api-contract.ts`](file:///mnt/projects/News-Dashboard/src/app/types/api-contract.ts).
+- **Requirement**: Whenever you modify the backend API (specifically in `fast_trade/services/api.py`), you **MUST** update the corresponding TypeScript interfaces in `api-contract.ts`.
+- **Scope**: This applies to `BacktestRequest`, `BacktestResult`, `LeaderboardEntry`, `Preset`, and `OptimizeRequest`.
+- **Validation**: Ensure that field names, types, and optionality match exactly between the Pydantic models in Python and the TypeScript interfaces.
+
 ## Security & Configuration Tips
 - Do not commit real secrets; use a local `.env` only for development. No API keys are required for archive downloads.
 - Archive path defaults to `./archive` when using the CLI; prefer this in examples.
