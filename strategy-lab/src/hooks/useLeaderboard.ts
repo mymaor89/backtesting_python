@@ -29,11 +29,8 @@ export function useLeaderboard() {
     setError(null)
     try {
       const res = await fetch(`${API_BASE}/leaderboard`)
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${await res.text()}`)
-      }
-      const data = await res.json()
-      setEntries(data)
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
+      setEntries(await res.json())
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -41,9 +38,15 @@ export function useLeaderboard() {
     }
   }, [])
 
+  const deleteEntry = useCallback(async (runId: string) => {
+    const res = await fetch(`${API_BASE}/runs/${runId}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
+    setEntries(prev => prev.filter(e => e.run_id !== runId))
+  }, [])
+
   useEffect(() => {
     fetchLeaderboard()
   }, [fetchLeaderboard])
 
-  return { entries, loading, error, refresh: fetchLeaderboard }
+  return { entries, loading, error, refresh: fetchLeaderboard, deleteEntry }
 }

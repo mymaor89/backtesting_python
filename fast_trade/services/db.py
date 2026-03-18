@@ -651,6 +651,14 @@ def save_trades(engine: sa.Engine, run_id: str, trade_log_df) -> None:
             """),
             rows,
         )
+def delete_run(engine: sa.Engine, run_id: str) -> bool:
+    """Delete a single backtest run and its trades. Returns True if deleted."""
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM trades WHERE run_id = :id"), {"id": run_id})
+        result = conn.execute(text("DELETE FROM backtest_runs WHERE id = :id"), {"id": run_id})
+    return result.rowcount > 0
+
+
 def clear_all_runs(engine: sa.Engine) -> int:
     """Clear all backtest runs and related trade data. Returns count of removed runs."""
     with engine.begin() as conn:

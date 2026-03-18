@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useLeaderboard, type LeaderboardEntry } from '../hooks/useLeaderboard'
 
 const cls = {
@@ -28,8 +28,22 @@ function formatPeriod(start: string | null, end: string | null): string {
   return '—'
 }
 
-export function Leaderboard() {
-  const { entries, loading, refresh } = useLeaderboard()
+export function Leaderboard({ isAdmin = false }: { isAdmin?: boolean }) {
+  const { entries, loading, refresh, deleteEntry } = useLeaderboard()
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const colSpan = isAdmin ? 12 : 11
+
+  const handleDelete = async (runId: string) => {
+    if (!confirm('Delete this leaderboard entry?')) return
+    setDeletingId(runId)
+    try {
+      await deleteEntry(runId)
+    } catch {
+      alert('Failed to delete entry.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   return (
     <div className={cls.container}>
@@ -37,6 +51,7 @@ export function Leaderboard() {
         <div className="flex items-center gap-3">
           <h2 className={cls.title}>Performance Leaderboard</h2>
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-900/30 text-cyan-500 font-bold border border-cyan-800/50">Top 50</span>
+          {isAdmin && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-900/30 text-red-400 font-bold border border-red-800/50">Admin</span>}
         </div>
         <button onClick={refresh} disabled={loading} className={cls.refreshBtn}>
           {loading ? 'Refreshing...' : '↻ Refresh'}
@@ -58,12 +73,13 @@ export function Leaderboard() {
               <th className={cls.th}>Sharpe</th>
               <th className={cls.th}>Win Rate</th>
               <th className={cls.th}>Max DD</th>
+              {isAdmin && <th className={cls.th}></th>}
             </tr>
           </thead>
           <tbody>
             {entries.length === 0 && !loading && (
               <tr>
-                <td colSpan={11} className="px-6 py-12 text-center text-slate-500 italic">
+                <td colSpan={colSpan} className="px-6 py-12 text-center text-slate-500 italic">
                   No backtest results found yet. Run some strategies to see them here!
                 </td>
               </tr>
@@ -97,6 +113,17 @@ export function Leaderboard() {
                 <td className={cls.td + " font-mono text-red-500/70"}>
                   {e.max_drawdown <= 0 ? e.max_drawdown.toFixed(2) : `-${e.max_drawdown.toFixed(2)}`}%
                 </td>
+                {isAdmin && (
+                  <td className={cls.td}>
+                    <button
+                      onClick={() => handleDelete(e.run_id)}
+                      disabled={deletingId === e.run_id}
+                      className="text-[10px] px-2 py-1 rounded border border-red-800/50 text-red-500 hover:bg-red-900/30 hover:text-red-400 transition-colors disabled:opacity-40"
+                    >
+                      {deletingId === e.run_id ? '…' : 'Delete'}
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

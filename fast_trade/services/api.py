@@ -314,6 +314,16 @@ def maintain_presets():
     return {"status": "ok", "cleaned_count": count}
 
 
+@app.delete("/runs/{run_id}", tags=["backtest"])
+@app.delete("/api-strategy/runs/{run_id}", tags=["backtest"])
+def delete_run_endpoint(run_id: str) -> dict:
+    """Delete a single backtest run by ID."""
+    from fast_trade.services.db import delete_run
+    if not delete_run(_db(), run_id):
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    return {"deleted": True}
+
+
 @app.post("/runs/maintenance/clear", tags=["backtest"])
 @app.post("/api-strategy/runs/maintenance/clear", tags=["backtest"])
 def clear_runs():

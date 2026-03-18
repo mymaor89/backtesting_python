@@ -14,8 +14,10 @@ type ResultTab = 'chart' | 'trades'
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('backtest')
   const [resultTab, setResultTab] = useState<ResultTab>('chart')
+  const [username, setUsername] = useState('')
   const { loading, result, error, runBacktest } = useBacktest()
   const apiHealth = useHealthCheck()
+  const isAdmin = username.trim().toLowerCase() === 'admin'
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-mono">
@@ -26,6 +28,13 @@ export default function App() {
           <span className="text-slate-600 text-sm">fast-trade v2</span>
         </div>
         <div className="flex items-center gap-3">
+          <input
+            type="text"
+            value={username}
+            onChange={e => setUsername(e.target.value)}
+            placeholder="username"
+            className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-cyan-600 w-28"
+          />
           <span
             className={`inline-block w-2.5 h-2.5 rounded-full ${
               apiHealth === 'healthy'
@@ -116,7 +125,7 @@ export default function App() {
         ) : activeTab === 'optimize' ? (
           <OptimizePanel />
         ) : (
-          <Leaderboard />
+          <Leaderboard isAdmin={isAdmin} />
         )}
       </main>
     </div>
