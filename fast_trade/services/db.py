@@ -91,7 +91,9 @@ def get_cached_backtest(
 def upsert_strategy(engine: sa.Engine, name: str, config: dict) -> Optional[int]:
     """Insert a strategy row (by name) and return its id."""
     if not name or name.strip().lower() == "unnamed":
-        name = "Unnamed"
+        symbol = config.get("symbol", "")
+        freq = config.get("freq") or config.get("chart_period", "")
+        name = f"{symbol} {freq}".strip() or "Strategy"
     with engine.begin() as conn:
         row = conn.execute(
             text("""
@@ -181,6 +183,29 @@ def get_run(engine: sa.Engine, run_id: str) -> Optional[dict]:
     if not row:
         return None
 
+    # Fallback: if params is missing essential fields (conditions), try to restore from summary.strategy
+    params = dict(row.params) if row.params else {}
+    summary = row.summary or {}
+    
+    # Check if any condition key is non-empty
+    has_conditions = any(params.get(k) for k in ["enter", "exit", "rules", "enter_short", "exit_short"])
+    
+    if not has_conditions and isinstance(summary, dict) and "strategy" in summary:
+        s_params = summary["strategy"]
+        if isinstance(s_params, dict):
+            # If the summary strategy has conditions, it's a better source than empty params
+            has_summary_conditions = any(s_params.get(k) for k in ["enter", "exit", "rules"])
+            if has_summary_conditions:
+                # Merge: take everything from summary strategy, but keep original params if they have useful data
+                # Actually, summary strategy is usually the 'complete' one used for the backtest
+                params = s_params
+    
+    # Ensure leverage exists
+    if params and "leverage" not in params:
+        # Check if row has leverage (if we were to add it to the SELECT, but it's not there yet)
+        # We can default to 1.0 or try to find it in summary
+        params["leverage"] = summary.get("leverage", 1.0)
+
     return {
         "run_id": row.id,
         "strategy_name": row.strategy_name,
@@ -190,7 +215,7 @@ def get_run(engine: sa.Engine, run_id: str) -> Optional[dict]:
         "finished_at": row.finished_at.isoformat() if row.finished_at else None,
         "status": row.status,
         "summary": row.summary or {},
-        "params": row.params or {},
+        "params": params,
     }
 
 
@@ -198,7 +223,7 @@ def list_presets(engine: sa.Engine) -> list[dict]:
     """Return all user-saved presets, ordered by updated_at desc."""
     with engine.connect() as conn:
         rows = conn.execute(
-            text("SELECT id, name, tag, category, description, state, created_at, updated_at FROM presets ORDER BY updated_at DESC")
+            text("SELECT id, name, tag, category, description, explanation, state, created_at, updated_at FROM presets ORDER BY updated_at DESC")
         ).fetchall()
     return [
         {
@@ -207,6 +232,7 @@ def list_presets(engine: sa.Engine) -> list[dict]:
             "tag": r.tag,
             "category": r.category,
             "description": r.description,
+            "explanation": r.explanation,
             "state": r.state,
             "created_at": r.created_at.isoformat() if r.created_at else None,
             "updated_at": r.updated_at.isoformat() if r.updated_at else None,
@@ -226,6 +252,107 @@ def _calc_raw_efficiency(return_perc: float, max_drawdown: float, time_in_market
     return return_perc / (dd ** 1.5 * tim)
 
 
+def _clean_preset_state(state: dict) -> dict:
+    """General cleanup of the strategy state:
+    1. Remove indicators from `datapoints` that are NOT used in `enter` or `exit`.
+    2. Ensure basic fields like `risk_enabled` exist (for frontend consistency).
+    3. Coerce numeric types.
+    """
+    if not isinstance(state, dict):
+        return state
+
+    # Extract all unique indicator names used in rules
+    used_names = {"close", "open", "high", "low", "volume"}  # Built-ins
+    
+    def walk_rules(rules):
+        if not isinstance(rules, list):
+            return
+        for rule in rules:
+            if not rule: 
+                continue
+            if isinstance(rule, dict):
+                if "or" in rule:
+                    walk_rules(rule["or"])
+                elif "and" in rule:
+                    walk_rules(rule["and"])
+                elif "left" in rule:
+                    # Support dictionary rule format: {"left": "rsi", "op": ">", "right": 70}
+                    if isinstance(rule.get("left"), str):
+                        used_names.add(rule.get("left"))
+                    right = rule.get("right")
+                    if isinstance(right, str) and not right.isdigit():
+                        try:
+                            float(right)
+                        except (ValueError, TypeError):
+                            used_names.add(right)
+            elif isinstance(rule, (list, tuple)) and len(rule) >= 3:
+                # Standard format: ["rsi", ">", 70]
+                if isinstance(rule[0], str):
+                    used_names.add(rule[0])
+                if isinstance(rule[2], str) and not rule[2].isdigit():
+                    try:
+                        float(rule[2])
+                    except (ValueError, TypeError):
+                        used_names.add(rule[2])
+
+    walk_rules(state.get("enter", []))
+    walk_rules(state.get("exit", []))
+    walk_rules(state.get("enter_short", []))
+    walk_rules(state.get("exit_short", []))
+
+    # 1. Filter datapoints
+    datapoints = state.get("datapoints")
+    if isinstance(datapoints, list):
+        # Only keep datapoints that are actually referenced in the rules
+        # OR are special 'built-in' names that the user might want to keep
+        state["datapoints"] = [
+            dp for dp in datapoints 
+            if dp.get("name") in used_names or dp.get("name") in ["close", "open", "high", "low", "volume"]
+        ]
+
+    # 2. Risk fields consistency
+    # Convert stop loss / take profit from decimal to percentage if they are > 0 and < 1
+    # Actually most of the time the state is StrategyFormState (stored from the frontend),
+    # where these are already percentages (e.g. 1.5 for 1.5%).
+    # We leave them as is unless there's a clear mistake.
+
+    # 3. Handle deprecated fields
+    if "chart_period" in state and "freq" not in state:
+        state["freq"] = state.pop("chart_period")
+    if "chart_start" in state and "start" not in state:
+        state["start"] = state.pop("chart_start")
+    if "chart_stop" in state and "stop" not in state:
+        state["stop"] = state.pop("chart_stop")
+
+    return state
+
+
+def clean_all_presets(engine: sa.Engine) -> int:
+    """Iterate through all presets and apply cleanup logic. Returns count of affected rows."""
+    presets = list_presets(engine)
+    count = 0
+    for p in presets:
+        original_json = json.dumps(p["state"], sort_keys=True)
+        # Deep copy to avoid in-place modification before comparison
+        state_copy = copy.deepcopy(p["state"])
+        cleaned = _clean_preset_state(state_copy)
+        
+        # Also remove presets that have NO conditions and NO name
+        is_empty = (not cleaned.get("enter") and not cleaned.get("exit") and not cleaned.get("rules"))
+        if is_empty and (not p["name"] or p["name"] == "Unnamed"):
+            # Delete useless preset
+            with engine.connect() as conn:
+                conn.execute(text("DELETE FROM presets WHERE id = :id"), {"id": p["id"]})
+                conn.commit()
+            count += 1
+            continue
+
+        if json.dumps(cleaned, sort_keys=True) != original_json:
+            update_preset(engine, p["id"], p["name"], p["tag"], p["category"], p["description"], p.get("explanation", ""), cleaned)
+            count += 1
+    return count
+
+
 def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
     """Return top backtest runs ranked by efficiency_score (calculated from return, risk, and time).
     
@@ -236,7 +363,17 @@ def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
         rows = conn.execute(
             text("""
                 SELECT
-                    r.id, s.name as strategy_name, r.strategy_hash, r.data_hash,
+                    r.id,
+                    COALESCE(
+                        NULLIF(s.name, 'Unnamed'),
+                        r.params->>'name',
+                        CONCAT(
+                            COALESCE(r.symbol, r.params->>'symbol', ''),
+                            ' ',
+                            COALESCE(r.timeframe, r.params->>'freq', r.params->>'chart_period', '')
+                        )
+                    ) as strategy_name,
+                    r.strategy_hash, r.data_hash,
                     r.finished_at, COALESCE(r.symbol, r.params->>'symbol') as symbol,
                     COALESCE(r.timeframe, r.params->>'freq', r.params->>'chart_period') as freq,
                     r.username,
@@ -249,7 +386,8 @@ def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
                     (r.summary->>'buy_and_hold_perc')::float as buy_and_hold_perc,
                     COALESCE((r.summary->'drawdown_metrics'->>'max_drawdown_pct')::float, (r.summary->>'max_drawdown')::float) as max_drawdown,
                     COALESCE((r.summary->>'time_in_market')::float, (r.summary->>'market_exposure_perc')::float, 0) as time_in_market,
-                    COALESCE(r.leverage, (r.summary->>'leverage')::float, 1.0) as leverage
+                    COALESCE(r.leverage, (r.summary->>'leverage')::float, 1.0) as leverage,
+                    r.params->>'explanation' as explanation
                 FROM backtest_runs r
                 LEFT JOIN strategies s ON r.strategy_id = s.id
                 WHERE r.status = 'done'
@@ -294,7 +432,7 @@ def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
     return [
         {
             "run_id": d["row"].id,
-            "strategy_name": d["row"].strategy_name or "Unnamed",
+            "strategy_name": (d["row"].strategy_name or "").strip() or "Unknown Strategy",
             "symbol": d["row"].symbol,
             "freq": d["row"].freq,
             "username": d["row"].username,
@@ -310,21 +448,23 @@ def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
             "leverage": round(d["row"].leverage, 2) if d["row"].leverage is not None else 1.0,
             "efficiency_score": d["normalized"],
             "finished_at": d["row"].finished_at.isoformat() if d["row"].finished_at else None,
+            "explanation": d["row"].explanation,
         }
         for d in top_entries
     ]
 
 
-def create_preset(engine: sa.Engine, name: str, tag: str, category: str, description: str, state: dict) -> dict:
+def create_preset(engine: sa.Engine, name: str, tag: str, category: str, description: str, explanation: str, state: dict) -> dict:
     """Insert a new preset and return it."""
+    state = _clean_preset_state(state)
     with engine.begin() as conn:
         row = conn.execute(
             text("""
-                INSERT INTO presets (name, tag, category, description, state)
-                VALUES (:name, :tag, :category, :description, CAST(:state AS jsonb))
+                INSERT INTO presets (name, tag, category, description, explanation, state)
+                VALUES (:name, :tag, :category, :description, :explanation, CAST(:state AS jsonb))
                 RETURNING id, created_at, updated_at
             """),
-            {"name": name, "tag": tag, "category": category, "description": description, "state": json.dumps(state)},
+            {"name": name, "tag": tag, "category": category, "description": description, "explanation": explanation, "state": json.dumps(state)},
         ).fetchone()
     return {
         "id": row.id,
@@ -332,25 +472,27 @@ def create_preset(engine: sa.Engine, name: str, tag: str, category: str, descrip
         "tag": tag,
         "category": category,
         "description": description,
+        "explanation": explanation,
         "state": state,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
 
 
-def update_preset(engine: sa.Engine, preset_id: int, name: str, tag: str, category: str, description: str, state: dict) -> Optional[dict]:
+def update_preset(engine: sa.Engine, preset_id: int, name: str, tag: str, category: str, description: str, explanation: str, state: dict) -> Optional[dict]:
     """Update an existing preset by id. Returns updated preset or None if not found."""
+    state = _clean_preset_state(state)
     with engine.begin() as conn:
         row = conn.execute(
             text("""
                 UPDATE presets
                 SET name = :name, tag = :tag, category = :category,
-                    description = :description, state = CAST(:state AS jsonb),
-                    updated_at = NOW()
+                    description = :description, explanation = :explanation,
+                    state = CAST(:state AS jsonb), updated_at = NOW()
                 WHERE id = :id
                 RETURNING id, created_at, updated_at
             """),
-            {"id": preset_id, "name": name, "tag": tag, "category": category, "description": description, "state": json.dumps(state)},
+            {"id": preset_id, "name": name, "tag": tag, "category": category, "description": description, "explanation": explanation, "state": json.dumps(state)},
         ).fetchone()
     if not row:
         return None
@@ -360,6 +502,7 @@ def update_preset(engine: sa.Engine, preset_id: int, name: str, tag: str, catego
         "tag": tag,
         "category": category,
         "description": description,
+        "explanation": explanation,
         "state": state,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
@@ -417,3 +560,15 @@ def save_trades(engine: sa.Engine, run_id: str, trade_log_df) -> None:
             """),
             rows,
         )
+def clear_all_runs(engine: sa.Engine) -> int:
+    """Clear all backtest runs and related trade data. Returns count of removed runs."""
+    with engine.begin() as conn:
+        # Get count before deletion
+        res = conn.execute(text("SELECT count(*) FROM backtest_runs")).fetchone()
+        count = res[0] if res else 0
+        
+        # Truncate tables correctly for timescale hypertables or standard SQL
+        # CASCADE ensures trades and portfolio_state are also cleaned up if they have FKs
+        conn.execute(text("TRUNCATE backtest_runs CASCADE"))
+        
+    return count

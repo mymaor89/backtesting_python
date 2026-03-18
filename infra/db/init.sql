@@ -112,6 +112,7 @@ CREATE TABLE IF NOT EXISTS presets (
     tag         TEXT NOT NULL DEFAULT '',
     category    TEXT NOT NULL DEFAULT 'Custom',
     description TEXT NOT NULL DEFAULT '',
+    explanation TEXT NOT NULL DEFAULT '',
     state       JSONB NOT NULL,
     created_at  TIMESTAMPTZ DEFAULT NOW(),
     updated_at  TIMESTAMPTZ DEFAULT NOW()

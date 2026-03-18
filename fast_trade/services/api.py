@@ -134,6 +134,7 @@ class PresetRequest(BaseModel):
     tag: str = Field("", description="Short label (e.g. Trend, Scalp)")
     category: str = Field("Custom", description="Category grouping")
     description: str = Field("", description="Strategy description")
+    explanation: str = Field("", description="Strategy explanation / rationale")
     state: dict = Field(..., description="StrategyFormState object")
 
 
@@ -305,6 +306,23 @@ def get_presets() -> list[dict]:
         return []
 
 
+@app.post("/presets/maintenance/cleanup", tags=["presets"])
+def maintain_presets():
+    """Trigger a cleanup of all existing presets: remove unused indicators and fix schema issues."""
+    from fast_trade.services.db import clean_all_presets
+    count = clean_all_presets(_db())
+    return {"status": "ok", "cleaned_count": count}
+
+
+@app.post("/runs/maintenance/clear", tags=["backtest"])
+@app.post("/api-strategy/runs/maintenance/clear", tags=["backtest"])
+def clear_runs():
+    """Clear all backtest runs from the database."""
+    from fast_trade.services.db import clear_all_runs
+    count = clear_all_runs(_db())
+    return {"status": "ok", "cleared_count": count}
+
+
 @app.get("/leaderboard", tags=["backtest"])
 @app.get("/api-strategy/leaderboard", tags=["backtest"])
 def get_leaderboard(limit: int = 50) -> list[dict]:
@@ -319,7 +337,7 @@ def get_leaderboard(limit: int = 50) -> list[dict]:
 def create_preset_endpoint(req: PresetRequest) -> dict:
     """Create a new preset."""
     try:
-        return create_preset(_db(), req.name, req.tag, req.category, req.description, req.state)
+        return create_preset(_db(), req.name, req.tag, req.category, req.description, req.explanation, req.state)
     except Exception as exc:
         if "presets_name_idx" in str(exc) or "duplicate" in str(exc).lower():
             raise HTTPException(status_code=409, detail=f"Preset named {req.name!r} already exists")
@@ -329,7 +347,7 @@ def create_preset_endpoint(req: PresetRequest) -> dict:
 @app.put("/presets/{preset_id}", tags=["presets"])
 def update_preset_endpoint(preset_id: int, req: PresetRequest) -> dict:
     """Update an existing preset."""
-    result = update_preset(_db(), preset_id, req.name, req.tag, req.category, req.description, req.state)
+    result = update_preset(_db(), preset_id, req.name, req.tag, req.category, req.description, req.explanation, req.state)
     if not result:
         raise HTTPException(status_code=404, detail=f"Preset {preset_id} not found")
     return result
