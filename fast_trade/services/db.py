@@ -88,12 +88,101 @@ def get_cached_backtest(
 
 # ── Write helpers ─────────────────────────────────────────────────────────────
 
+def _derive_strategy_name(config: dict) -> str:
+    """Derive a tactic-descriptive name from strategy config when no explicit name is given."""
+    datapoints = config.get("datapoints", [])
+    enter_rules = config.get("enter", [])
+
+    # Group datapoints by transformer type
+    by_type: dict = {}
+    for dp in datapoints:
+        t = dp.get("transformer", "").lower()
+        by_type.setdefault(t, []).append(dp)
+
+    def _args(t):
+        return [dp.get("args", []) for dp in by_type.get(t, [])]
+
+    # Breakout via Donchian channels
+    if "rolling_max" in by_type or "rolling_min" in by_type:
+        dps = by_type.get("rolling_max") or by_type.get("rolling_min")
+        period = (dps[0].get("args") or [20])[0]
+        return f"Donchian {period} Breakout"
+
+    # RSI-based — inspect entry threshold to distinguish trend filter vs mean-reversion
+    if "rsi" in by_type:
+        all_periods = [(dp.get("args") or [14])[0] for dp in by_type["rsi"]]
+        # Find the RSI used in the entry condition
+        entry_rsi_period = None
+        entry_threshold = None
+        entry_op = None
+        for rule in enter_rules:
+            if isinstance(rule, (list, tuple)) and len(rule) >= 3:
+                left, op, right = str(rule[0]), rule[1], rule[2]
+                if "rsi" in left.lower():
+                    # Try to pull period from matching datapoint name
+                    for dp in by_type["rsi"]:
+                        if dp.get("name") == left:
+                            entry_rsi_period = (dp.get("args") or [14])[0]
+                    entry_threshold = right
+                    entry_op = op
+                    break
+        period = entry_rsi_period or min(all_periods)
+        if entry_op == "<" and entry_threshold is not None:
+            label = "Mean Rev" if period <= 5 else "Oversold"
+            return f"RSI({period}) {label} <{entry_threshold}"
+        if entry_op == ">" and entry_threshold is not None:
+            return f"RSI({period}) Overbought >{entry_threshold}"
+        if len(all_periods) >= 3:
+            # Multi-RSI hybrid
+            extra = [k.upper() for k in ("macd", "atr", "ema", "sma") if k in by_type]
+            suffix = " + " + "/".join(extra[:2]) if extra else ""
+            return f"RSI Multi{suffix}"
+        return f"RSI({period}) Strategy"
+
+    # Triple EMA stack
+    if len(by_type.get("ema", [])) >= 3:
+        periods = sorted((dp.get("args") or [20])[0] for dp in by_type["ema"])
+        return f"Triple EMA {'/'.join(str(p) for p in periods)}"
+
+    # EMA vs SMA crossover
+    if by_type.get("ema") and by_type.get("sma"):
+        ep = (by_type["ema"][0].get("args") or [20])[0]
+        sp = (by_type["sma"][0].get("args") or [200])[0]
+        return f"EMA {ep}/SMA {sp} Crossover"
+
+    # Dual EMA crossover
+    if len(by_type.get("ema", [])) == 2:
+        periods = sorted((dp.get("args") or [20])[0] for dp in by_type["ema"])
+        return f"EMA {periods[0]}/{periods[1]} Crossover"
+
+    # Dual SMA crossover (Golden/Death Cross)
+    if len(by_type.get("sma", [])) >= 2:
+        periods = sorted((dp.get("args") or [200])[0] for dp in by_type["sma"])
+        return f"SMA {periods[0]}/{periods[1]} Crossover"
+
+    # MACD-based
+    if "macd" in by_type:
+        extras = [k.upper() for k in ("rsi", "ema", "sma", "atr") if k in by_type]
+        suffix = " + " + "/".join(extras[:2]) if extras else ""
+        return f"MACD{suffix}"
+
+    # Bollinger Bands
+    if "bbands" in by_type or "bollinger" in by_type:
+        return "Bollinger Bands Mean Rev"
+
+    # Generic fallback using present indicator names
+    priority = ["macd", "atr", "stoch", "cci", "adx", "ema", "sma", "vwap"]
+    found = [k.upper() for k in priority if k in by_type]
+    if found:
+        return " + ".join(found[:3]) + " Strategy"
+
+    return "Custom Strategy"
+
+
 def upsert_strategy(engine: sa.Engine, name: str, config: dict) -> Optional[int]:
     """Insert a strategy row (by name) and return its id."""
     if not name or name.strip().lower() == "unnamed":
-        symbol = config.get("symbol", "")
-        freq = config.get("freq") or config.get("chart_period", "")
-        name = f"{symbol} {freq}".strip() or "Strategy"
+        name = _derive_strategy_name(config)
     with engine.begin() as conn:
         row = conn.execute(
             text("""
@@ -364,15 +453,8 @@ def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
             text("""
                 SELECT
                     r.id,
-                    COALESCE(
-                        NULLIF(s.name, 'Unnamed'),
-                        r.params->>'name',
-                        CONCAT(
-                            COALESCE(r.symbol, r.params->>'symbol', ''),
-                            ' ',
-                            COALESCE(r.timeframe, r.params->>'freq', r.params->>'chart_period', '')
-                        )
-                    ) as strategy_name,
+                    COALESCE(NULLIF(s.name, 'Unnamed'), r.params->>'name') as strategy_name,
+                    r.params as raw_params,
                     r.strategy_hash, r.data_hash,
                     r.finished_at, COALESCE(r.symbol, r.params->>'symbol') as symbol,
                     COALESCE(r.timeframe, r.params->>'freq', r.params->>'chart_period') as freq,
@@ -405,12 +487,21 @@ def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
     # Compute raw efficiency scores for all rows
     all_data = []
     for r in rows:
+        # Derive tactic name from params if not set, or if name looks like a generic "SYMBOL FREQ" label
+        sname = (r.strategy_name or "").strip()
+        _looks_generic = bool(
+            not sname
+            or __import__("re").fullmatch(r"[A-Z0-9\-]+ \d+[Dhm]", sname)
+        )
+        if _looks_generic:
+            params = r.raw_params if isinstance(r.raw_params, dict) else {}
+            sname = _derive_strategy_name(params)
         raw_s = _calc_raw_efficiency(
             r.return_perc or 0,
             r.max_drawdown or 0,
             r.time_in_market or 0,
         )
-        all_data.append({"row": r, "raw_score": raw_s})
+        all_data.append({"row": r, "raw_score": raw_s, "strategy_name": sname})
 
     # Normalize to 0-100 using global min-max within this candidate set
     raw_scores = [d["raw_score"] for d in all_data]
@@ -432,7 +523,7 @@ def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
     return [
         {
             "run_id": d["row"].id,
-            "strategy_name": (d["row"].strategy_name or "").strip() or "Unknown Strategy",
+            "strategy_name": d["strategy_name"],
             "symbol": d["row"].symbol,
             "freq": d["row"].freq,
             "username": d["row"].username,
