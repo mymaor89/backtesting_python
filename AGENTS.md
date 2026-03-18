@@ -10,6 +10,10 @@
 - pyproject.toml: packaging, deps, and console script
 - the virtual env is literally `venv/` use `source venv/bin/activate`
 
+## Docker Container Management
+- After completing a bug fix, feature, or any change in `fast_trade/`, you MUST restart the relevant containers to ensure the Python interpreter picks up the changes (especially as uvicorn workers and Celery do not always auto-reload).
+- Command: `docker compose restart api-gateway backtest-worker data-ingestor`
+
 ## Build, Test, and Development Commands
 - Setup (editable): `python -m venv .venv && source .venv/bin/activate && pip install -e .`
 - Run tests: `pytest` (or `python -m pytest`)
