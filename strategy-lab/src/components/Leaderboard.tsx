@@ -6,17 +6,26 @@ const cls = {
   header: 'px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50',
   title: 'text-sm font-bold text-slate-200 uppercase tracking-wider',
   table: 'w-full text-left border-collapse',
-  th: 'px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800',
-  td: 'px-4 py-4 text-xs text-slate-300 border-b border-slate-800/50',
+  th: 'px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800 whitespace-nowrap',
+  td: 'px-4 py-4 text-xs text-slate-300 border-b border-slate-800/50 whitespace-nowrap',
   row: 'hover:bg-slate-800/30 transition-colors',
   rank: 'text-cyan-500/50 font-mono font-bold text-[10px]',
-  badge: 'px-2 py-0.5 rounded text-[10px] font-mono font-bold leading-none capitalize',
   refreshBtn: 'text-xs text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1.5'
 }
 
 function Metric({ value, format }: { value: number, format: (v: number) => string }) {
   const color = value > 0 ? 'text-emerald-400' : value < 0 ? 'text-red-400' : 'text-slate-400'
   return <span className={color}>{format(value)}</span>
+}
+
+function formatPeriod(start: string | null, end: string | null): string {
+  const fmt = (d: string) => {
+    const date = new Date(d)
+    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+  }
+  if (start && end) return `${fmt(start)} – ${fmt(end)}`
+  if (start) return `${fmt(start)} – now`
+  return '—'
 }
 
 export function Leaderboard() {
@@ -40,19 +49,21 @@ export function Leaderboard() {
             <tr>
               <th className={cls.th}>Rank</th>
               <th className={cls.th}>Strategy</th>
-              <th className={cls.th}>Ticker</th>
+              <th className={cls.th}>Symbol</th>
+              <th className={cls.th}>Freq</th>
+              <th className={cls.th}>User</th>
+              <th className={cls.th}>Period</th>
               <th className={cls.th}>Return</th>
-              <th className={cls.th}>B&H Return</th>
+              <th className={cls.th}>B&H</th>
               <th className={cls.th}>Sharpe</th>
               <th className={cls.th}>Win Rate</th>
               <th className={cls.th}>Max DD</th>
-              <th className={cls.th}>Finished</th>
             </tr>
           </thead>
           <tbody>
             {entries.length === 0 && !loading && (
               <tr>
-                <td colSpan={10} className="px-6 py-12 text-center text-slate-500 italic">
+                <td colSpan={11} className="px-6 py-12 text-center text-slate-500 italic">
                   No backtest results found yet. Run some strategies to see them here!
                 </td>
               </tr>
@@ -61,18 +72,19 @@ export function Leaderboard() {
               <tr key={e.run_id} className={cls.row}>
                 <td className={cls.td}><span className={cls.rank}>#{idx + 1}</span></td>
                 <td className={cls.td}>
-                  <div className="flex flex-col">
-                    <span className="font-bold text-slate-200">{e.strategy_name}</span>
-                    {e.username && (
-                      <span className="text-[10px] text-cyan-500/70 font-mono mt-0.5">@{e.username}</span>
-                    )}
-                  </div>
+                  <span className="font-bold text-slate-200">{e.strategy_name}</span>
                 </td>
                 <td className={cls.td}>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-slate-400 font-bold">{e.symbol || 'N/A'}</span>
-                    <span className="text-[10px] text-slate-500 bg-slate-800/50 px-1 rounded border border-slate-800">{e.freq || 'N/A'}</span>
-                  </div>
+                  <span className="font-mono font-bold text-slate-300">{e.symbol || '—'}</span>
+                </td>
+                <td className={cls.td}>
+                  <span className="text-[10px] text-slate-400 bg-slate-800/50 px-1.5 py-0.5 rounded border border-slate-700">{e.freq || '—'}</span>
+                </td>
+                <td className={cls.td}>
+                  <span className="text-[10px] text-cyan-500/70 font-mono">{e.username ? `@${e.username}` : '—'}</span>
+                </td>
+                <td className={cls.td}>
+                  <span className="text-[10px] text-slate-400 font-mono">{formatPeriod(e.start_date, e.end_date)}</span>
                 </td>
                 <td className={cls.td + " font-mono font-bold"}>
                   <Metric value={e.return_perc} format={v => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`} />
@@ -84,9 +96,6 @@ export function Leaderboard() {
                 <td className={cls.td + " font-mono"}>{e.win_rate.toFixed(1)}%</td>
                 <td className={cls.td + " font-mono text-red-500/70"}>
                   {e.max_drawdown <= 0 ? e.max_drawdown.toFixed(2) : `-${e.max_drawdown.toFixed(2)}`}%
-                </td>
-                <td className={cls.td + " text-[10px] text-slate-600 font-mono"}>
-                  {new Date(e.finished_at).toLocaleString()}
                 </td>
               </tr>
             ))}

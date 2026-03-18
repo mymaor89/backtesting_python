@@ -15,6 +15,8 @@ export interface LeaderboardEntry {
   buy_and_hold_perc: number
   username: string | null
   finished_at: string
+  start_date: string | null
+  end_date: string | null
 }
 
 export function useLeaderboard() {
