@@ -451,6 +451,27 @@ def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
     with engine.connect() as conn:
         rows = conn.execute(
             text("""
+                WITH deduped AS (
+                    SELECT DISTINCT ON (
+                        COALESCE(symbol, params->>'symbol'),
+                        COALESCE(timeframe, params->>'freq', params->>'chart_period'),
+                        ROUND((summary->>'return_perc')::numeric, 2),
+                        COALESCE((summary->>'total_trades')::int, -1)
+                    )
+                        id, strategy_id, strategy_hash, data_hash,
+                        finished_at, symbol, timeframe, username,
+                        summary, params, leverage
+                    FROM backtest_runs
+                    WHERE status = 'done'
+                      AND summary ? 'return_perc'
+                      AND COALESCE(leverage, (summary->>'leverage')::float, 1.0) <= 1.0
+                    ORDER BY
+                        COALESCE(symbol, params->>'symbol'),
+                        COALESCE(timeframe, params->>'freq', params->>'chart_period'),
+                        ROUND((summary->>'return_perc')::numeric, 2),
+                        COALESCE((summary->>'total_trades')::int, -1),
+                        finished_at DESC
+                )
                 SELECT
                     r.id,
                     COALESCE(NULLIF(s.name, 'Unnamed'), r.params->>'name') as strategy_name,
@@ -470,11 +491,8 @@ def list_leaderboard(engine: sa.Engine, limit: int = 50) -> list[dict]:
                     COALESCE((r.summary->>'time_in_market')::float, (r.summary->>'market_exposure_perc')::float, 0) as time_in_market,
                     COALESCE(r.leverage, (r.summary->>'leverage')::float, 1.0) as leverage,
                     r.params->>'explanation' as explanation
-                FROM backtest_runs r
+                FROM deduped r
                 LEFT JOIN strategies s ON r.strategy_id = s.id
-                WHERE r.status = 'done'
-                  AND r.summary ? 'return_perc'
-                  AND COALESCE(r.leverage, (r.summary->>'leverage')::float, 1.0) <= 1.0
                 ORDER BY (r.summary->>'return_perc')::float DESC
                 LIMIT :candidate_limit
             """),
