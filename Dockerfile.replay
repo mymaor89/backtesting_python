@@ -1,0 +1,51 @@
+# ============================================================
+# 5s Replay API image — serves api_server:app on port 8001.
+#
+# Same base as the main fast_trade image (so `import fast_trade` and its heavy
+# __init__ resolve), plus:
+#   • the engine-agnostic `shared_strategies` package, pulled from a build
+#     ADDITIONAL CONTEXT (the algotrading-strategies checkout) — NOT vendored
+#     into this repo, so it stays single-source-of-truth;
+#   • the replay entrypoints (run_5s_replay.py, api_server.py).
+#
+# Build (compose wires the extra context):
+#   docker compose build replay-api
+# ============================================================
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc g++ libgomp1 curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Layer 1: declared package deps (stub trick — cached unless pyproject changes)
+COPY pyproject.toml ./
+RUN mkdir -p fast_trade/archive fast_trade/summary fast_trade/ml fast_trade/services && \
+    touch fast_trade/__init__.py \
+          fast_trade/archive/__init__.py \
+          fast_trade/summary/__init__.py \
+          fast_trade/ml/__init__.py \
+          fast_trade/services/__init__.py
+RUN pip install --no-cache-dir --timeout 120 --retries 5 .
+
+# ── Layer 2: service + replay extras (finta is imported by fast_trade/__init__)
+RUN pip install --no-cache-dir --timeout 120 --retries 5 \
+        fastapi \
+        "uvicorn[standard]" \
+        psycopg2-binary \
+        pandas \
+        finta
+
+# ── Layer 3: the engine-agnostic shared strategies (from the `strategies` context)
+COPY --from=strategies . /tmp/strategies
+RUN pip install --no-cache-dir /tmp/strategies && rm -rf /tmp/strategies
+
+# ── Layer 4: real application code
+COPY fast_trade/ ./fast_trade/
+RUN pip install --no-cache-dir --no-deps --timeout 120 .
+COPY run_5s_replay.py api_server.py ./
+
+EXPOSE 8001
+
+CMD ["uvicorn", "api_server:app", "--host", "0.0.0.0", "--port", "8001"]

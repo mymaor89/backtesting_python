@@ -380,6 +380,42 @@ services:
     networks:
       - ft-net
 
+  # ──────────────────────────────────────────────
+  # 5s REPLAY API  (FastAPI, port 8001)
+  # Standalone backtest engine the OpenAlgo UI calls. Docker-published → reachable
+  # on the LAN and bypasses the host's ufw (unlike a bare host uvicorn process).
+  # Reads ohlcv_5s from the ALGOTRADING TimescaleDB on the host (:5435) via
+  # host-gateway — NOT ft-timescaledb, which doesn't hold the MNQ data.
+  # ──────────────────────────────────────────────
+  replay-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.replay
+      additional_contexts:
+        # The engine-agnostic shared strategy package (sibling repo checkout).
+        strategies: ${STRATEGIES_PATH:-/mnt/projects/algotrading/algotrading-strategies}
+    container_name: ft-replay-api
+    restart: unless-stopped
+    environment:
+      - POSTGRES_HOST=host.docker.internal
+      - POSTGRES_PORT=5435
+      - POSTGRES_DB=fasttrade
+      - POSTGRES_USER=fasttrade
+      - POSTGRES_PASSWORD=${ALGOTRADING_DB_PASSWORD:-fasttrade_dev}
+      - BACKTEST_CORS_ORIGINS=*
+      - PYTHONUNBUFFERED=1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "curl", "--silent", "--fail", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ft-net
+
 # ──────────────────────────────────────────────
 # NETWORKS
 # ──────────────────────────────────────────────
