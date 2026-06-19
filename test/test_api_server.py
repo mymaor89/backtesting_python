@@ -36,17 +36,21 @@ def test_unknown_strategy_is_422():
     assert "unknown strategy" in r.json()["detail"]
 
 
-def test_cors_preflight_allows_vite_origin():
-    r = client.options(
-        "/api/v1/backtest/run",
-        headers={
-            "Origin": "http://localhost:5173",
-            "Access-Control-Request-Method": "POST",
-            "Access-Control-Request-Headers": "content-type",
-        },
-    )
-    assert r.status_code == 200
-    assert r.headers["access-control-allow-origin"] == "http://localhost:5173"
+def test_cors_preflight_allows_lan_origins():
+    # Default config allows all origins (trusted LAN), so any device on the
+    # network — e.g. http://192.168.1.190:5173 — gets a permissive preflight.
+    for origin in ("http://localhost:5173", "http://192.168.1.190:5173",
+                   "http://192.168.1.234:5173"):
+        r = client.options(
+            "/api/v1/backtest/run",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        assert r.status_code == 200
+        assert r.headers["access-control-allow-origin"] == "*"
 
 
 def test_run_returns_metrics_and_trades_without_db(monkeypatch):

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import Any, List, Optional
 
 from fastapi import FastAPI, HTTPException
@@ -36,17 +37,27 @@ app = FastAPI(
                 "engine (SimulatedBroker + StrategyContext) for the OpenAlgo UI.",
 )
 
-# Allow the typical Vite/React dev origins so the OpenAlgo UI can call us.
-ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
+# CORS. This service runs on a trusted LAN and is called from the OpenAlgo UI on
+# arbitrary devices (e.g. http://192.168.1.190:5173, http://192.168.1.234:5173),
+# so the default is to allow ALL origins. Override with a comma-separated
+# BACKTEST_CORS_ORIGINS="http://host-a:5173,http://host-b:5173" to lock it down.
+#
+# NOTE: the CORS spec forbids "*" together with credentials, and Starlette will
+# refuse to emit a usable Access-Control-Allow-Origin in that combination. This
+# API uses no cookies/auth, so we disable allow_credentials whenever origins is
+# the wildcard (the OpenAlgo UI's axios client sends no credentials either).
+_origins_env = os.environ.get("BACKTEST_CORS_ORIGINS", "*").strip()
+if _origins_env == "*":
+    ALLOWED_ORIGINS = ["*"]
+    ALLOW_CREDENTIALS = False
+else:
+    ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()]
+    ALLOW_CREDENTIALS = True
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
