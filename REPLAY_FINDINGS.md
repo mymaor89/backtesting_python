@@ -12,6 +12,24 @@ built entirely inside `backtesting_python`.
 | Backtest glue | `fast_trade/backtest_glue.py` | Wires `StrategyContext(SimulatedBroker, FixedClock, CapturingTelemetry, OpenControl)`, defines the 1-minute strategy bar + 5s sub-bar shapes, resamples a 5s stream into per-minute groups. |
 | Replay runner | `run_5s_replay.py` | Pulls `ohlcv_5s` from TimescaleDB, drives the strategy bar-by-bar, prints the optimistic-vs-realistic PnL report and a buffer-sensitivity sweep. |
 | Tests | `test/test_simulated_broker.py` | 10 tests incl. the breach → naked → bar-close rescue path. |
+| API service | `api_server.py` | FastAPI microservice exposing the replay over REST for the OpenAlgo UI. |
+
+## Microservice (`api_server.py`)
+
+Standalone FastAPI process so the UI can trigger backtests without touching the
+live engine's CPU. Install: `pip install -r requirements-api.txt`. Run:
+
+```bash
+uvicorn api_server:app --host 0.0.0.0 --port 8001   # or: python api_server.py
+```
+
+- `GET  /health` → `{"status":"ok","strategies":[...]}`
+- `POST /api/v1/backtest/run` — body `{strategy_name, start_time?, end_time?, symbol?}`
+  → `{metrics:{total_pnl, optimism_gap, trades_count, win_rate, ...}, trades:[...]}`.
+- CORS allows `http://localhost:5173` (+ common Vite/React dev origins).
+- The CPU-heavy run is dispatched via `asyncio.to_thread` so the event loop stays
+  responsive; a lock serialises runs to keep CPU bounded.
+- Tests: `test/test_api_server.py` (health, 422, CORS, response shape; DB-gated happy path).
 
 Install: `pip install -e /mnt/projects/algotrading/algotrading-strategies` (done in
 `.venv-replay`). Run: `python run_5s_replay.py`. Tests: `pytest test/test_simulated_broker.py`.

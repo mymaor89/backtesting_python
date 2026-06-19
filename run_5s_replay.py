@@ -70,15 +70,19 @@ def fetch_5s(symbol: str, start: str, end: str) -> List[tuple]:
 
 # ── round-trip reconstruction from the broker fill ledger ────────────────────
 class Trade:
-    __slots__ = ("entry_ts", "side", "entry_px", "qty", "pnl", "exits", "breach", "rescue")
+    __slots__ = ("entry_ts", "side", "entry_px", "entry_qty", "qty", "pnl",
+                 "exits", "exit_px", "exit_ts", "breach", "rescue")
 
     def __init__(self, rec):
         self.entry_ts = rec.ts
         self.side = rec.side
         self.entry_px = rec.price
+        self.entry_qty = rec.qty
         self.qty = rec.qty
         self.pnl = 0.0
         self.exits: List[str] = []
+        self.exit_px = None
+        self.exit_ts = None
         self.breach = False
         self.rescue = False
 
@@ -86,10 +90,28 @@ class Trade:
         self.pnl += rec.pnl
         self.exits.append(rec.kind)
         self.qty -= rec.qty
+        self.exit_px = rec.price            # last closing fill price wins
+        self.exit_ts = rec.ts
         if rec.breach:
             self.breach = True
         if rec.kind == "RESCUE":
             self.rescue = True
+
+    def as_dict(self) -> dict:
+        def iso(t):
+            return t.isoformat() if t is not None else None
+        return {
+            "entry_time": iso(self.entry_ts),
+            "side": self.side,
+            "entry_price": self.entry_px,
+            "qty": self.entry_qty,
+            "exit_time": iso(self.exit_ts),
+            "exit_price": self.exit_px,
+            "exits": list(self.exits),
+            "realized_pnl": round(self.pnl, 2),
+            "breach": self.breach,
+            "rescue": self.rescue,
+        }
 
 
 def to_trades(fills) -> List[Trade]:
@@ -216,6 +238,59 @@ def sweep(groups, base_opt):
     print("  At the live default (15 pts) the buffer fully absorbs every 5s")
     print("  move-through, so nothing breaches. Tightening it exposes the exact")
     print("  non-fill → bar-close-rescue mechanic the engine is built to model.\n")
+
+
+SUPPORTED_STRATEGIES = {"ema_retest_v134"}
+
+
+def run_replay(strategy_name: str = "ema_retest_v134", symbol: str = None,
+               start: str = None, end: str = None) -> dict:
+    """Programmatic entry point (shared by the CLI and the FastAPI service).
+
+    Runs the optimistic + realistic replay and returns a JSON-serialisable result
+    with `metrics` and the per-trade `trades` ledger. Raises ValueError on an
+    unknown strategy or empty data so callers can map it to an HTTP 4xx.
+    """
+    if strategy_name not in SUPPORTED_STRATEGIES:
+        raise ValueError(f"unknown strategy '{strategy_name}'; "
+                         f"supported: {sorted(SUPPORTED_STRATEGIES)}")
+    symbol = symbol or SYMBOL
+    start = start or START
+    end = end or END
+
+    rows = fetch_5s(symbol, start, end)
+    if not rows:
+        raise ValueError(f"no ohlcv_5s rows for {symbol} in [{start}, {end})")
+    groups = group_into_minutes(rows)
+
+    opt = run(groups, realistic=False)
+    real = run(groups, realistic=True)
+    real_trades = to_trades(real.fills)
+
+    wins = sum(1 for t in real_trades if t.pnl > 0)
+    n = len(real_trades)
+    return {
+        "strategy_name": strategy_name,
+        "symbol": symbol,
+        "start": start,
+        "end": end,
+        "metrics": {
+            "total_pnl": round(real.total_pnl, 2),
+            "optimistic_pnl": round(opt.total_pnl, 2),
+            "optimism_gap": round(opt.total_pnl - real.total_pnl, 2),
+            "trades_count": n,
+            "wins": wins,
+            "losses": n - wins,
+            "win_rate": round(wins / n, 4) if n else 0.0,
+            "tp_fills": real.n_tp,
+            "sl_fills": real.n_sl,
+            "buffer_breaches": real.n_breaches,
+            "bar_close_rescues": real.n_rescues,
+            "sub_bars_5s": len(rows),
+            "strategy_bars_1m": len(groups),
+        },
+        "trades": [t.as_dict() for t in real_trades],
+    }
 
 
 def main() -> int:
