@@ -18,13 +18,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable, List, Tuple
 
+from shared_strategies import registry
 from shared_strategies.context import (
     CapturingTelemetry,
     FixedClock,
     OpenControl,
     StrategyContext,
 )
-from shared_strategies.ema_retest_v134 import EmaRetestV134Strategy
 
 from .simulated_broker import SimulatedBroker
 
@@ -53,26 +53,34 @@ class SubBar:
 @dataclass
 class BacktestRig:
     """Everything one replay run needs, constructed together so the broker's
-    fill-callback is wired back into the strategy's reconciliation hook."""
-    strategy: EmaRetestV134Strategy
+    fill-callback is wired back into the strategy's reconciliation hook.
+    `strategy` is whatever engine-agnostic class the registry resolved — the rig
+    is strategy-agnostic; only the registry knows the concrete type."""
+    strategy: object
     broker: SimulatedBroker
     clock: FixedClock
     telemetry: CapturingTelemetry
     ctx: StrategyContext
 
 
-def build_rig(realistic: bool) -> BacktestRig:
+def build_rig(realistic: bool, strategy_name: str = "ema_retest_v134") -> BacktestRig:
     """Assemble strategy + broker + context for one fidelity setting.
+
+    The strategy is resolved from the `shared_strategies` registry by name (id or
+    alias) and built via its factory — so any engine-agnostic strategy registered
+    there is backtestable with no change here. Raises ValueError on an unknown
+    name (the registry message lists what is supported).
 
     `realistic=False` → OPTIMISTIC (level-only fills, no breaches/rescues).
     `realistic=True`  → HIGH-FIDELITY (stop-limit buffer breach + bar-close rescue).
     """
+    spec = registry.get(strategy_name)
     broker = SimulatedBroker(realistic=realistic)
     telemetry = CapturingTelemetry()
     clock = FixedClock(t=datetime(1970, 1, 1))
     control = OpenControl()
     ctx = StrategyContext(broker=broker, telemetry=telemetry, clock=clock, control=control)
-    strategy = EmaRetestV134Strategy(ctx)
+    strategy = spec.factory(ctx)
     # Wire the broker's between-bar fills back to the strategy so its local
     # position bookkeeping is reconciled (stand-in for live fill callbacks).
     broker.position_closed_cb = strategy.on_position_closed
