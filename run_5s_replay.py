@@ -35,6 +35,8 @@ from typing import List, Optional, Tuple
 
 import psycopg2
 
+from shared_strategies import registry
+
 from fast_trade.backtest_glue import Bar, SubBar, build_rig, group_into_minutes
 
 logging.basicConfig(level=os.environ.get("LOGLEVEL", "ERROR"),
@@ -128,8 +130,9 @@ def to_trades(fills) -> List[Trade]:
     return trades
 
 
-def run(groups: List[Tuple[Bar, List[SubBar]]], realistic: bool):
-    rig = build_rig(realistic=realistic)
+def run(groups: List[Tuple[Bar, List[SubBar]]], realistic: bool,
+        strategy_name: str = "ema_retest_v134"):
+    rig = build_rig(realistic=realistic, strategy_name=strategy_name)
     broker, strat = rig.broker, rig.strategy
     for bar, subs in groups:
         et = bar.date
@@ -240,44 +243,33 @@ def sweep(groups, base_opt):
     print("  non-fill → bar-close-rescue mechanic the engine is built to model.\n")
 
 
-# Both the live strategy id (`ema_crossover` runs V13.4 in the engine) and the
-# replay's own name resolve to the same EmaRetestV134Strategy.
-SUPPORTED_STRATEGIES = {"ema_retest_v134", "ema_crossover"}
-
-# Live-engine version `parameter_json` key  →  (replay strategy module global, caster).
-# The two sides use DIFFERENT names (the engine schema vs the ported strategy), so
-# a version's params must be remapped, not passed through. Keys with no replay
-# equivalent — `session`, `ema_distance_max_points`, and the legacy duplicate
-# `daily_target_usd` (canonical is `daily_profit_target_usd`) — are reported in
-# `ignored_params`, never silently applied.
-_PARAM_MAP = {
-    "ema_fast":                ("EMA_FAST", int),
-    "ema_slow":                ("EMA_SLOW", int),
-    "ema_distance_min_points": ("MIN_EMA_DISTANCE", float),
-    "daily_profit_target_usd": ("DAILY_TARGET_USD", float),
-    "daily_loss_limit_usd":    ("DAILY_LOSS_LIMIT_USD", float),
-    "take_profit_points":      ("TP_PTS", float),
-    "warmup_bars":             ("WARMUP_BARS", int),
-    "max_open_orders":         ("MAX_OPEN_ORDERS", int),
-    "max_orders_per_day":      ("MAX_ORDERS_PER_DAY", int),
-}
+# The set of backtestable strategies is whatever has registered itself in the
+# shared `shared_strategies` package — no hardcoded list. Both the canonical id
+# and any aliases (e.g. the live `ema_crossover` slot id, which runs V13.4) are
+# accepted. Importing the package above triggers each strategy's registration.
+SUPPORTED_STRATEGIES = frozenset(registry.names())
 
 
-def _apply_version_params(parameters: Optional[dict]):
-    """Translate a live-engine version `parameter_json` onto the replay strategy's
-    module globals (which the strategy reads at bar time). Returns
+def _apply_version_params(spec, parameters: Optional[dict]):
+    """Translate a live-engine version `parameter_json` onto the strategy's module
+    globals (which the strategy reads at bar time), using the strategy's own
+    `param_map` (version key → (global, caster)) and `params_module`. Returns
     (applied: dict, ignored: list[str], restore: callable). `restore()` puts the
-    previous globals back — call it in a finally so a run never leaks state."""
-    import shared_strategies.ema_retest_v134 as m
+    previous globals back — call it in a finally so a run never leaks state.
+
+    Keys with no entry in the strategy's `param_map`, or whose value won't cast,
+    are reported in `ignored` and never silently applied."""
+    m = spec.params_module
+    param_map = spec.param_map
     applied: dict = {}
     ignored: List[str] = []
     saved: dict = {}
     for key, val in (parameters or {}).items():
-        spec = _PARAM_MAP.get(key)
-        if spec is None:
+        target = param_map.get(key)
+        if target is None:
             ignored.append(key)
             continue
-        gname, cast = spec
+        gname, cast = target
         try:
             cval = cast(val)
         except (TypeError, ValueError):
@@ -306,12 +298,10 @@ def run_replay(strategy_name: str = "ema_retest_v134", symbol: str = None,
     so callers can map it to an HTTP 4xx.
 
     `parameters` is a live-engine version's `parameter_json` (the UI resolves it
-    from the selected strategy version); it is remapped via _PARAM_MAP and applied
-    for the duration of this run only.
+    from the selected strategy version); it is remapped via the strategy's own
+    `param_map` and applied for the duration of this run only.
     """
-    if strategy_name not in SUPPORTED_STRATEGIES:
-        raise ValueError(f"unknown strategy '{strategy_name}'; "
-                         f"supported: {sorted(SUPPORTED_STRATEGIES)}")
+    spec = registry.get(strategy_name)  # raises ValueError listing supported names
     symbol = symbol or SYMBOL
     start = start or START
     end = end or END
@@ -321,10 +311,10 @@ def run_replay(strategy_name: str = "ema_retest_v134", symbol: str = None,
         raise ValueError(f"no ohlcv_5s rows for {symbol} in [{start}, {end})")
     groups = group_into_minutes(rows)
 
-    applied, ignored, restore = _apply_version_params(parameters)
+    applied, ignored, restore = _apply_version_params(spec, parameters)
     try:
-        opt = run(groups, realistic=False)
-        real = run(groups, realistic=True)
+        opt = run(groups, realistic=False, strategy_name=strategy_name)
+        real = run(groups, realistic=True, strategy_name=strategy_name)
     finally:
         restore()
     real_trades = to_trades(real.fills)

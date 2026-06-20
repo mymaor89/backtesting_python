@@ -99,10 +99,13 @@ def test_param_translation_maps_and_restores():
     """_apply_version_params remaps live-schema keys → replay globals, reports
     unknown keys as ignored, and restore() puts the globals back."""
     import shared_strategies.ema_retest_v134 as m
+    from shared_strategies import registry
     from run_5s_replay import _apply_version_params
 
+    spec = registry.get("ema_retest_v134")
     before_tp, before_dist = m.TP_PTS, m.MIN_EMA_DISTANCE
     applied, ignored, restore = _apply_version_params(
+        spec,
         {"take_profit_points": 25, "ema_distance_min_points": 5,
          "session": {}, "ema_distance_max_points": 75})
     try:
