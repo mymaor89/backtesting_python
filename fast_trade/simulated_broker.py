@@ -206,23 +206,36 @@ class SimulatedBroker(AbstractBroker):
         stop always fills at its trigger, ignoring gaps. Realistic is data-driven:
         it fills at the trigger on a graze, slips to the limit when the bar sweeps
         the whole band, and cannot fill (breach) when the bar opens past the limit.
+
+        MARKET-STOP mode (limit == stop): the bracket's SL is a plain market stop,
+        not a stop-limit. A market stop ALWAYS fills once triggered — there is no
+        limit floor to gap through, so it never breaches. Realistically it fills at
+        the trigger on a normal through-trade and at the (worse) sub-bar OPEN when
+        price gapped past the trigger. This is what server-side ICT brackets use
+        (bpr_ict / ict_ifvg); EMA's stop-limit (limit != stop) is unaffected.
         """
         S, L = sl.stop, sl.limit
-        if self._side is Side.LONG:                 # SELL stop-limit, L < S
+        market_stop = (L == S)
+        if self._side is Side.LONG:                 # SELL stop, L <= S
             if sub.low > S:
                 return None                         # stop not reached
             if not self.realistic:
                 return (S, "")
+            if market_stop:
+                # fills at the trigger, or at the gap-open if it opened past it
+                return (min(S, sub.open), "market stop")
             if sub.open <= L:
                 return (None, "")                   # gapped open below limit → breach
             if sub.low <= L:
                 return (L, "swept band → fill at limit")
             return (S, "")                          # grazed the stop only
-        else:                                       # SHORT: BUY stop-limit, L > S
+        else:                                       # SHORT: BUY stop, L >= S
             if sub.high < S:
                 return None
             if not self.realistic:
                 return (S, "")
+            if market_stop:
+                return (max(S, sub.open), "market stop")
             if sub.open >= L:
                 return (None, "")                   # gapped open above limit → breach
             if sub.high >= L:
