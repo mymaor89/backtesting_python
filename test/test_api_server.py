@@ -28,6 +28,7 @@ def test_health():
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
     assert "ema_retest_v134" in r.json()["strategies"]
+    assert "ema_crossover" in r.json()["strategies"]
 
 
 def test_unknown_strategy_is_422():
@@ -54,10 +55,14 @@ def test_cors_preflight_allows_lan_origins():
 
 
 def test_run_returns_metrics_and_trades_without_db(monkeypatch):
-    """Endpoint shape is asserted with the heavy run stubbed out (no DB needed)."""
+    """Endpoint shape is asserted with the heavy run stubbed out (no DB needed).
+    Also asserts the request's `parameters` are forwarded to run_replay."""
+    seen = {}
     fake = {
-        "strategy_name": "ema_retest_v134", "symbol": "MNQM6",
+        "strategy_name": "ema_crossover", "symbol": "MNQM6",
         "start": "2026-06-10", "end": "2026-06-11",
+        "applied_params": {"take_profit_points": 25.0},
+        "ignored_params": ["session"],
         "metrics": {
             "total_pnl": 300.0, "optimistic_pnl": 300.0, "optimism_gap": 0.0,
             "trades_count": 2, "wins": 2, "losses": 0, "win_rate": 1.0,
@@ -71,14 +76,42 @@ def test_run_returns_metrics_and_trades_without_db(monkeypatch):
             "breach": False, "rescue": False,
         }],
     }
-    monkeypatch.setattr("api_server.run_replay", lambda **kw: fake)
+
+    def _capture(**kw):
+        seen.update(kw)
+        return fake
+
+    monkeypatch.setattr("api_server.run_replay", _capture)
     r = client.post("/api/v1/backtest/run",
-                    json={"strategy_name": "ema_retest_v134"})
+                    json={"strategy_name": "ema_crossover",
+                          "parameters": {"take_profit_points": 25, "session": {}}})
     assert r.status_code == 200
     body = r.json()
     assert body["metrics"]["trades_count"] == 2
     assert body["trades"][0]["side"] == "LONG"
-    assert body["trades"][0]["realized_pnl"] == 40.0
+    assert body["applied_params"] == {"take_profit_points": 25.0}
+    assert body["ignored_params"] == ["session"]
+    # the request parameters reached run_replay
+    assert seen["parameters"] == {"take_profit_points": 25, "session": {}}
+
+
+def test_param_translation_maps_and_restores():
+    """_apply_version_params remaps live-schema keys → replay globals, reports
+    unknown keys as ignored, and restore() puts the globals back."""
+    import shared_strategies.ema_retest_v134 as m
+    from run_5s_replay import _apply_version_params
+
+    before_tp, before_dist = m.TP_PTS, m.MIN_EMA_DISTANCE
+    applied, ignored, restore = _apply_version_params(
+        {"take_profit_points": 25, "ema_distance_min_points": 5,
+         "session": {}, "ema_distance_max_points": 75})
+    try:
+        assert m.TP_PTS == 25.0 and m.MIN_EMA_DISTANCE == 5.0
+        assert applied == {"take_profit_points": 25.0, "ema_distance_min_points": 5.0}
+        assert set(ignored) == {"session", "ema_distance_max_points"}
+    finally:
+        restore()
+    assert m.TP_PTS == before_tp and m.MIN_EMA_DISTANCE == before_dist
 
 
 @pytest.mark.skipif(not _db_available(), reason="TimescaleDB not reachable")

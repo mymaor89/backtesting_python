@@ -31,7 +31,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import psycopg2
 
@@ -240,16 +240,74 @@ def sweep(groups, base_opt):
     print("  non-fill → bar-close-rescue mechanic the engine is built to model.\n")
 
 
-SUPPORTED_STRATEGIES = {"ema_retest_v134"}
+# Both the live strategy id (`ema_crossover` runs V13.4 in the engine) and the
+# replay's own name resolve to the same EmaRetestV134Strategy.
+SUPPORTED_STRATEGIES = {"ema_retest_v134", "ema_crossover"}
+
+# Live-engine version `parameter_json` key  →  (replay strategy module global, caster).
+# The two sides use DIFFERENT names (the engine schema vs the ported strategy), so
+# a version's params must be remapped, not passed through. Keys with no replay
+# equivalent — `session`, `ema_distance_max_points`, and the legacy duplicate
+# `daily_target_usd` (canonical is `daily_profit_target_usd`) — are reported in
+# `ignored_params`, never silently applied.
+_PARAM_MAP = {
+    "ema_fast":                ("EMA_FAST", int),
+    "ema_slow":                ("EMA_SLOW", int),
+    "ema_distance_min_points": ("MIN_EMA_DISTANCE", float),
+    "daily_profit_target_usd": ("DAILY_TARGET_USD", float),
+    "daily_loss_limit_usd":    ("DAILY_LOSS_LIMIT_USD", float),
+    "take_profit_points":      ("TP_PTS", float),
+    "warmup_bars":             ("WARMUP_BARS", int),
+    "max_open_orders":         ("MAX_OPEN_ORDERS", int),
+    "max_orders_per_day":      ("MAX_ORDERS_PER_DAY", int),
+}
+
+
+def _apply_version_params(parameters: Optional[dict]):
+    """Translate a live-engine version `parameter_json` onto the replay strategy's
+    module globals (which the strategy reads at bar time). Returns
+    (applied: dict, ignored: list[str], restore: callable). `restore()` puts the
+    previous globals back — call it in a finally so a run never leaks state."""
+    import shared_strategies.ema_retest_v134 as m
+    applied: dict = {}
+    ignored: List[str] = []
+    saved: dict = {}
+    for key, val in (parameters or {}).items():
+        spec = _PARAM_MAP.get(key)
+        if spec is None:
+            ignored.append(key)
+            continue
+        gname, cast = spec
+        try:
+            cval = cast(val)
+        except (TypeError, ValueError):
+            ignored.append(key)
+            continue
+        if gname not in saved:
+            saved[gname] = getattr(m, gname)
+        setattr(m, gname, cval)
+        applied[key] = cval
+
+    def restore() -> None:
+        for g, v in saved.items():
+            setattr(m, g, v)
+
+    return applied, ignored, restore
 
 
 def run_replay(strategy_name: str = "ema_retest_v134", symbol: str = None,
-               start: str = None, end: str = None) -> dict:
+               start: str = None, end: str = None,
+               parameters: Optional[dict] = None) -> dict:
     """Programmatic entry point (shared by the CLI and the FastAPI service).
 
     Runs the optimistic + realistic replay and returns a JSON-serialisable result
-    with `metrics` and the per-trade `trades` ledger. Raises ValueError on an
-    unknown strategy or empty data so callers can map it to an HTTP 4xx.
+    with `metrics`, the per-trade `trades` ledger, and which version params were
+    `applied` vs `ignored`. Raises ValueError on an unknown strategy or empty data
+    so callers can map it to an HTTP 4xx.
+
+    `parameters` is a live-engine version's `parameter_json` (the UI resolves it
+    from the selected strategy version); it is remapped via _PARAM_MAP and applied
+    for the duration of this run only.
     """
     if strategy_name not in SUPPORTED_STRATEGIES:
         raise ValueError(f"unknown strategy '{strategy_name}'; "
@@ -263,8 +321,12 @@ def run_replay(strategy_name: str = "ema_retest_v134", symbol: str = None,
         raise ValueError(f"no ohlcv_5s rows for {symbol} in [{start}, {end})")
     groups = group_into_minutes(rows)
 
-    opt = run(groups, realistic=False)
-    real = run(groups, realistic=True)
+    applied, ignored, restore = _apply_version_params(parameters)
+    try:
+        opt = run(groups, realistic=False)
+        real = run(groups, realistic=True)
+    finally:
+        restore()
     real_trades = to_trades(real.fills)
 
     wins = sum(1 for t in real_trades if t.pnl > 0)
@@ -274,6 +336,8 @@ def run_replay(strategy_name: str = "ema_retest_v134", symbol: str = None,
         "symbol": symbol,
         "start": start,
         "end": end,
+        "applied_params": applied,
+        "ignored_params": ignored,
         "metrics": {
             "total_pnl": round(real.total_pnl, 2),
             "optimistic_pnl": round(opt.total_pnl, 2),

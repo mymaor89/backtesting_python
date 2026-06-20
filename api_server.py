@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -69,10 +69,13 @@ _run_lock = asyncio.Lock()
 
 # ── schemas ──────────────────────────────────────────────────────────────────
 class BacktestRequest(BaseModel):
-    strategy_name: str = Field("ema_retest_v134", examples=["ema_retest_v134"])
+    strategy_name: str = Field("ema_crossover", examples=["ema_crossover", "ema_retest_v134"])
     start_time: Optional[str] = Field(None, description="ISO date/time, inclusive (default: full window)")
     end_time: Optional[str] = Field(None, description="ISO date/time, exclusive (default: full window)")
     symbol: Optional[str] = Field(None, description="Contract symbol (default: MNQM6)")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None, description="A strategy version's parameter_json (resolved by the UI from the "
+                          "selected version). Remapped + applied for this run; unknown keys ignored.")
 
 
 class TradeRow(BaseModel):
@@ -109,6 +112,8 @@ class BacktestResponse(BaseModel):
     symbol: str
     start: str
     end: str
+    applied_params: Dict[str, Any] = {}
+    ignored_params: List[str] = []
     metrics: Metrics
     trades: List[TradeRow]
 
@@ -136,6 +141,7 @@ async def run_backtest(req: BacktestRequest) -> Any:
                 symbol=req.symbol,
                 start=req.start_time,
                 end=req.end_time,
+                parameters=req.parameters,
             )
         except ValueError as e:                       # bad strategy / empty data
             raise HTTPException(status_code=422, detail=str(e))
