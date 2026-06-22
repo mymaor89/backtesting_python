@@ -321,6 +321,13 @@ def run_replay(strategy_name: str = "ema_retest_v134", symbol: str = None,
 
     wins = sum(1 for t in real_trades if t.pnl > 0)
     n = len(real_trades)
+    # Max drawdown (USD): deepest peak-to-trough dip of the realized equity
+    # curve (cumulative trade PnL, starting flat at 0). Positive dollar figure.
+    equity = peak = max_drawdown = 0.0
+    for t in real_trades:
+        equity += t.pnl
+        peak = max(peak, equity)
+        max_drawdown = max(max_drawdown, peak - equity)
     return {
         "strategy_name": strategy_name,
         "symbol": symbol,
@@ -332,6 +339,7 @@ def run_replay(strategy_name: str = "ema_retest_v134", symbol: str = None,
             "total_pnl": round(real.total_pnl, 2),
             "optimistic_pnl": round(opt.total_pnl, 2),
             "optimism_gap": round(opt.total_pnl - real.total_pnl, 2),
+            "max_drawdown": round(max_drawdown, 2),
             "trades_count": n,
             "wins": wins,
             "losses": n - wins,

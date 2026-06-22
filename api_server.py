@@ -95,6 +95,7 @@ class Metrics(BaseModel):
     total_pnl: float
     optimistic_pnl: float
     optimism_gap: float
+    max_drawdown: float
     trades_count: int
     wins: int
     losses: int
