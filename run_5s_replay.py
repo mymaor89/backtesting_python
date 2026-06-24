@@ -38,6 +38,7 @@ from typing import List, Optional, Tuple
 import psycopg2
 
 from shared_strategies import registry
+from shared_strategies import timeframe
 
 from fast_trade.backtest_glue import Bar, SubBar, build_rig, group_into_minutes
 
@@ -314,7 +315,13 @@ def run_replay(strategy_name: str = "ema_retest_v134", symbol: str = None,
     rows = fetch_5s(symbol, start, end)
     if not rows:
         raise ValueError(f"no ohlcv_5s rows for {symbol} in [{start}, {end})")
-    groups = group_into_minutes(rows)
+    # Resolve the bar resolution: the selected version's `timeframe` param, or
+    # the strategy's coded default from the registry. Resample the 5s rows up to
+    # that timeframe so the backtest trades the SAME bars as the live engine.
+    tf_token = (parameters or {}).get("timeframe") \
+        or registry.default_params(strategy_name).get("timeframe")
+    minutes = timeframe.to_minutes(tf_token)
+    groups = group_into_minutes(rows, minutes=minutes)
 
     applied, ignored, restore = _apply_version_params(spec, parameters)
     try:

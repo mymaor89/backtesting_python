@@ -88,30 +88,42 @@ def build_rig(realistic: bool, strategy_name: str = "ema_retest_v134") -> Backte
                        telemetry=telemetry, ctx=ctx)
 
 
-def group_into_minutes(rows: Iterable[tuple]) -> List[Tuple[Bar, List[SubBar]]]:
-    """Resample an ordered 5s stream into per-minute (Bar, [SubBar]) groups.
+def group_into_minutes(rows: Iterable[tuple],
+                       minutes: int = 1) -> List[Tuple[Bar, List[SubBar]]]:
+    """Resample an ordered 5s stream into `minutes`-minute (Bar, [SubBar]) groups.
 
     `rows` are (time, open, high, low, close) tuples with tz-aware ET `time`,
-    sorted ascending. Each output minute carries the 1-minute OHLC the strategy
-    trades on plus the ordered 5s sub-bars the broker fills against.
+    sorted ascending. Each output bar carries the OHLC the strategy trades on
+    plus the ordered 5s sub-bars the broker fills against. Bucket boundaries are
+    floored to a clock grid (00,05,10… for 5m; the hour for 60m) so they match
+    the live engine's IBKR bars at the same timeframe. `minutes <= 1` keeps the
+    original per-minute behaviour.
     """
+    minutes = max(1, int(minutes))
+
+    def _floor(t):
+        mins = t.hour * 60 + t.minute
+        anchor = (mins // minutes) * minutes
+        return t.replace(hour=anchor // 60, minute=anchor % 60,
+                         second=0, microsecond=0)
+
     groups: List[Tuple[Bar, List[SubBar]]] = []
     cur_key = None
     subs: List[SubBar] = []
     o = h = l = c = None
-    minute_dt = None
+    bar_dt = None
 
     def flush():
-        if minute_dt is None:
+        if bar_dt is None:
             return
-        groups.append((Bar(date=minute_dt, open=o, high=h, low=l, close=c), subs))
+        groups.append((Bar(date=bar_dt, open=o, high=h, low=l, close=c), subs))
 
     for t, op, hi, lo, cl in rows:
-        key = t.replace(second=0, microsecond=0)
+        key = _floor(t)
         if key != cur_key:
             flush()
             cur_key = key
-            minute_dt = key
+            bar_dt = key
             subs = []
             o, h, l, c = op, hi, lo, cl
         else:
