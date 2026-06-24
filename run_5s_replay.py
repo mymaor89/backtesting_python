@@ -19,8 +19,9 @@ What it does
 
 Usage
 -----
-    python run_5s_replay.py                 # full window, MNQM6
-    SYMBOL=MNQM6 START=2026-06-10 END=2026-06-13 python run_5s_replay.py
+    python run_5s_replay.py                 # full window, continuous MNQ
+    SYMBOL=MNQ START=2026-01-10 END=2026-01-30 python run_5s_replay.py
+    # per-contract slices still work: SYMBOL=MNQM6 / MNQU6 for a single expiry
 
 DB env (defaults match the local algotrading TimescaleDB on host port 5435):
     POSTGRES_HOST=localhost POSTGRES_PORT=5435 POSTGRES_DB=fasttrade
@@ -42,7 +43,10 @@ from fast_trade.backtest_glue import Bar, SubBar, build_rig, group_into_minutes
 logging.basicConfig(level=os.environ.get("LOGLEVEL", "ERROR"),
                     format="%(levelname)s %(name)s %(message)s")
 
-SYMBOL = os.environ.get("SYMBOL", "MNQM6")
+# Default to the continuous front-month series ("MNQ"), which spans the full
+# imported history. Per-expiry contracts (MNQM6, MNQU6, …) only cover their own
+# active window, so a default of MNQM6 errored for any out-of-window date range.
+SYMBOL = os.environ.get("SYMBOL", "MNQ")
 START = os.environ.get("START", "2026-06-08")
 END = os.environ.get("END", "2026-06-20")
 
