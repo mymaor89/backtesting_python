@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import os
+import statistics
 import sys
 from typing import List, Optional, Tuple
 
@@ -332,6 +333,21 @@ def run_replay(strategy_name: str = "ema_retest_v134", symbol: str = None,
         equity += t.pnl
         peak = max(peak, equity)
         max_drawdown = max(max_drawdown, peak - equity)
+    # Profit factor: gross profit / |gross loss|. None when there are no losing
+    # trades (ratio undefined / infinite) so the JSON stays finite.
+    pnls = [t.pnl for t in real_trades]
+    gross_profit = sum(p for p in pnls if p > 0)
+    gross_loss = sum(p for p in pnls if p < 0)  # <= 0
+    profit_factor = round(gross_profit / abs(gross_loss), 3) if gross_loss else None
+    # Expectancy: average $ PnL per trade (positive = edge).
+    expectancy = round(real.total_pnl / n, 2) if n else 0.0
+    # Sharpe: mean per-trade PnL / sample std-dev of per-trade PnL (no risk-free,
+    # intraday). None with < 2 trades or zero dispersion (undefined).
+    sharpe = None
+    if n >= 2:
+        sd = statistics.stdev(pnls)
+        if sd > 0:
+            sharpe = round(statistics.fmean(pnls) / sd, 3)
     return {
         "strategy_name": strategy_name,
         "symbol": symbol,
@@ -348,6 +364,9 @@ def run_replay(strategy_name: str = "ema_retest_v134", symbol: str = None,
             "wins": wins,
             "losses": n - wins,
             "win_rate": round(wins / n, 4) if n else 0.0,
+            "profit_factor": profit_factor,
+            "expectancy": expectancy,
+            "sharpe": sharpe,
             "tp_fills": real.n_tp,
             "sl_fills": real.n_sl,
             "buffer_breaches": real.n_breaches,
