@@ -72,7 +72,7 @@ class BacktestRequest(BaseModel):
     strategy_name: str = Field("ema_crossover", examples=["ema_crossover", "ema_retest_v134"])
     start_time: Optional[str] = Field(None, description="ISO date/time, inclusive (default: full window)")
     end_time: Optional[str] = Field(None, description="ISO date/time, exclusive (default: full window)")
-    symbol: Optional[str] = Field(None, description="Contract symbol (default: MNQM6)")
+    symbol: Optional[str] = Field(None, description="Contract symbol (default: MNQ, the continuous front-month series)")
     parameters: Optional[Dict[str, Any]] = Field(
         None, description="A strategy version's parameter_json (resolved by the UI from the "
                           "selected version). Remapped + applied for this run; unknown keys ignored.")
