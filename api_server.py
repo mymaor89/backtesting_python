@@ -100,6 +100,9 @@ class Metrics(BaseModel):
     wins: int
     losses: int
     win_rate: float
+    profit_factor: Optional[float] = None
+    expectancy: float = 0.0
+    sharpe: Optional[float] = None
     tp_fills: int
     sl_fills: int
     buffer_breaches: int
